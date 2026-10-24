@@ -308,6 +308,28 @@ export async function searchSimilarChunks(
 }
 
 /**
+ * Deletes a stored document and its associated chunks.
+ */
+export async function deleteStoredDocument(documentId: string): Promise<void> {
+  const isPostgresReady = await initDb();
+  if (isPostgresReady && pool) {
+    try {
+      await pool.query('DELETE FROM documents WHERE id = $1', [documentId]);
+    } catch (err) {
+      console.warn('Failed to delete from Postgres:', err);
+    }
+  }
+
+  memoryDocuments.delete(documentId);
+  for (let i = memoryChunks.length - 1; i >= 0; i--) {
+    if (memoryChunks[i].documentId === documentId) {
+      memoryChunks.splice(i, 1);
+    }
+  }
+  saveToDisk();
+}
+
+/**
  * Lists all stored documents.
  */
 export async function listStoredDocuments(): Promise<StoredDocument[]> {
