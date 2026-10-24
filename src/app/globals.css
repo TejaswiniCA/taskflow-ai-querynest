@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 239 84% 96%;
+    --accent-foreground: 239 84% 45%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 239 84% 67%;
+    --radius: 0.75rem;
+
+    --sidebar-background: 220 20% 96%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 90%;
+    --sidebar-muted: 220 14% 92%;
+  }
+
+  .dark {
+    --background: 224 25% 8%;
+    --foreground: 210 20% 98%;
+    --card: 224 24% 11%;
+    --card-foreground: 210 20% 98%;
+    --popover: 224 24% 11%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 224 20% 16%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 224 20% 16%;
+    --muted-foreground: 217 19% 65%;
+    --accent: 239 50% 18%;
+    --accent-foreground: 239 84% 75%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 224 20% 16%;
+    --input: 224 20% 18%;
+    --ring: 239 84% 67%;
+
+    --sidebar-background: 224 28% 9%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-border: 224 20% 15%;
+    --sidebar-muted: 224 22% 14%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply antialiased;
+    font-size: 16px;
+  }
+  body {
+    @apply bg-background text-foreground;
+    line-height: 1.6;
+    min-height: 100vh;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  /* Visible focus ring for accessibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
