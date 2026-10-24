@@ -6,21 +6,18 @@ import { ChatHeader } from '@/components/chat/chat-header';
 import { ChatPanel } from '@/components/chat/chat-panel';
 import { CitationDrawer } from '@/components/chat/citation-drawer';
 import { LandingHero } from '@/components/landing/landing-hero';
-import { MOCK_DOCUMENTS } from '@/lib/mock-data';
 import { DocumentItem, ChatMessage, Citation } from '@/lib/types';
 
 export default function AskGuruPage() {
-  const [documents, setDocuments] = useState<DocumentItem[]>(MOCK_DOCUMENTS);
-  const [activeDocId, setActiveDocId] = useState<string | null>(MOCK_DOCUMENTS[0].id);
-  const [documentMessages, setDocumentMessages] = useState<Record<string, ChatMessage[]>>({
-    [MOCK_DOCUMENTS[0].id]: MOCK_DOCUMENTS[0].initialMessages,
-    [MOCK_DOCUMENTS[1].id]: MOCK_DOCUMENTS[1].initialMessages,
-  });
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [activeDocId, setActiveDocId] = useState<string | null>(null);
+  const [documentMessages, setDocumentMessages] = useState<Record<string, ChatMessage[]>>({});
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(true);
 
-  // Load existing documents from API if available
+  // Load existing uploaded documents from API
   useEffect(() => {
     async function loadDocuments() {
       try {
@@ -29,10 +26,13 @@ export default function AskGuruPage() {
           const data = await res.json();
           if (data.documents && data.documents.length > 0) {
             setDocuments(data.documents);
+            setActiveDocId(data.documents[0].id);
           }
         }
       } catch (err) {
-        // Fallback to initial mock documents
+        console.error('Error loading documents:', err);
+      } finally {
+        setIsLoadingDocs(false);
       }
     }
     loadDocuments();
@@ -56,12 +56,26 @@ export default function AskGuruPage() {
   };
 
   const handleDocumentAdded = (newDoc: DocumentItem) => {
-    setDocuments(prev => [newDoc, ...prev]);
+    setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)]);
     setActiveDocId(newDoc.id);
     setDocumentMessages(prev => ({
       ...prev,
       [newDoc.id]: [],
     }));
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      await fetch(`/api/documents?id=${encodeURIComponent(docId)}`, {
+        method: 'DELETE',
+      });
+      setDocuments(prev => prev.filter(d => d.id !== docId));
+      if (activeDocId === docId) {
+        setActiveDocId(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+    }
   };
 
   const handleSendMessage = async (userText: string) => {
@@ -173,7 +187,7 @@ export default function AskGuruPage() {
               throw new Error(data.error);
             }
           } catch (jsonErr) {
-            // Ignore single malformed lines
+            // Ignore single malformed line
           }
         }
       }
@@ -208,6 +222,7 @@ export default function AskGuruPage() {
         activeDocId={activeDocId}
         onSelectDocument={handleSelectDocument}
         onDocumentAdded={handleDocumentAdded}
+        onDeleteDocument={handleDeleteDocument}
         onNewChat={handleNewChat}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
@@ -231,10 +246,7 @@ export default function AskGuruPage() {
             />
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <LandingHero
-                onUploadClick={() => setIsSidebarOpen(true)}
-                onExploreDemo={() => handleSelectDocument(documents[0])}
-              />
+              <LandingHero onDocumentAdded={handleDocumentAdded} />
             </div>
           )}
         </main>

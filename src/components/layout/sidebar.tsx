@@ -13,6 +13,7 @@ interface SidebarProps {
   activeDocId: string | null;
   onSelectDocument: (doc: DocumentItem) => void;
   onDocumentAdded: (newDoc: DocumentItem) => void;
+  onDeleteDocument?: (docId: string) => void;
   onNewChat: () => void;
   isOpen: boolean;
   onClose: () => void;
@@ -23,6 +24,7 @@ export function Sidebar({
   activeDocId,
   onSelectDocument,
   onDocumentAdded,
+  onDeleteDocument,
   onNewChat,
   isOpen,
   onClose,
@@ -94,6 +96,7 @@ export function Sidebar({
               onSelectDocument(doc);
               onClose();
             }}
+            onDeleteDocument={onDeleteDocument}
           />
         </div>
 
