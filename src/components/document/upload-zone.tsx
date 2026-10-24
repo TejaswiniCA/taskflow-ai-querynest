@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { UploadCloud, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatFileSize, cn } from '@/lib/utils';
 import { DocumentItem, UploadProgress } from '@/lib/types';
@@ -19,70 +19,18 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const simulateProcessing = (file: File) => {
-    setUploadProgress({
-      status: 'uploading',
-      progress: 20,
-      fileName: file.name,
-    });
+  const handleUpload = async (file: File) => {
+    // Client-side quick check
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadProgress({
+        status: 'error',
+        progress: 0,
+        fileName: file.name,
+        errorMessage: `File exceeds 5 MB limit (${formatFileSize(file.size)}).`,
+      });
+      return;
+    }
 
-    setTimeout(() => {
-      setUploadProgress(prev => ({
-        ...prev,
-        status: 'parsing',
-        progress: 55,
-      }));
-    }, 600);
-
-    setTimeout(() => {
-      setUploadProgress(prev => ({
-        ...prev,
-        status: 'embedding',
-        progress: 85,
-      }));
-    }, 1300);
-
-    setTimeout(() => {
-      setUploadProgress(prev => ({
-        ...prev,
-        status: 'ready',
-        progress: 100,
-      }));
-
-      // Create new mock document item
-      const estPages = Math.max(1, Math.round(file.size / (1024 * 120)));
-      const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-
-      const newDoc: DocumentItem = {
-        id: `doc-${Date.now()}`,
-        title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
-        filename: file.name,
-        sizeBytes: file.size,
-        pageCount: estPages,
-        uploadedAt: 'Just now',
-        suggestedQuestions: [
-          `Summarize the key objectives of ${cleanTitle}.`,
-          'What are the primary recommendations outlined in this document?',
-          'Extract all numerical figures and timeline milestones.',
-          'List any potential risks or limitations highlighted.',
-        ],
-        initialMessages: [],
-      };
-
-      onDocumentAdded(newDoc);
-
-      // Reset to idle after short celebration
-      setTimeout(() => {
-        setUploadProgress({ status: 'idle', progress: 0 });
-      }, 1500);
-    }, 2000);
-  };
-
-  const handleFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-
-    // Validation (PDF or TXT, max 5 MB)
     const validExtensions = ['.pdf', '.txt'];
     const hasValidExt = validExtensions.some(ext =>
       file.name.toLowerCase().endsWith(ext)
@@ -98,17 +46,64 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
+    // Step 1: Uploading
+    setUploadProgress({
+      status: 'uploading',
+      progress: 25,
+      fileName: file.name,
+    });
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Progress simulation while server performs extraction & embedding
+    const progressTimer = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev.status === 'uploading' && prev.progress < 50) {
+          return { ...prev, progress: prev.progress + 5 };
+        }
+        if (prev.progress >= 50 && prev.progress < 85) {
+          return { ...prev, status: 'embedding', progress: prev.progress + 5 };
+        }
+        return prev;
+      });
+    }, 400);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      clearInterval(progressTimer);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Upload failed with HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      setUploadProgress({
+        status: 'ready',
+        progress: 100,
+        fileName: file.name,
+      });
+
+      onDocumentAdded(data.document);
+
+      setTimeout(() => {
+        setUploadProgress({ status: 'idle', progress: 0 });
+      }, 2000);
+    } catch (err: any) {
+      clearInterval(progressTimer);
       setUploadProgress({
         status: 'error',
         progress: 0,
         fileName: file.name,
-        errorMessage: `File exceeds 5 MB limit (${formatFileSize(file.size)}).`,
+        errorMessage: err?.message || 'Failed to upload and index document.',
       });
-      return;
     }
-
-    simulateProcessing(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -124,7 +119,9 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUpload(e.dataTransfer.files[0]);
+    }
   };
 
   return (
@@ -134,7 +131,11 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
         type="file"
         accept=".pdf,.txt"
         className="hidden"
-        onChange={e => handleFiles(e.target.files)}
+        onChange={e => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleUpload(e.target.files[0]);
+          }
+        }}
       />
 
       <div
@@ -224,7 +225,7 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
               className="flex items-center gap-2 text-emerald-500 text-xs font-semibold py-2"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Ready for questioning!</span>
+              <span>Indexed & Ready!</span>
             </motion.div>
           )}
 
@@ -240,7 +241,7 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>Upload Failed</span>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground break-words max-w-[220px]">
                 {uploadProgress.errorMessage}
               </p>
               <button

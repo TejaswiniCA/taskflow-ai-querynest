@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { ChatHeader } from '@/components/chat/chat-header';
 import { ChatPanel } from '@/components/chat/chat-panel';
@@ -19,6 +19,24 @@ export default function AskGuruPage() {
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Load existing documents from API if available
+  useEffect(() => {
+    async function loadDocuments() {
+      try {
+        const res = await fetch('/api/documents');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.documents && data.documents.length > 0) {
+            setDocuments(data.documents);
+          }
+        }
+      } catch (err) {
+        // Fallback to initial mock documents
+      }
+    }
+    loadDocuments();
+  }, []);
 
   const activeDocument = documents.find(d => d.id === activeDocId) || null;
   const currentMessages = (activeDocId && documentMessages[activeDocId]) || [];
@@ -46,74 +64,140 @@ export default function AskGuruPage() {
     }));
   };
 
-  const handleSendMessage = (userText: string) => {
-    if (!activeDocId) return;
+  const handleSendMessage = async (userText: string) => {
+    if (!activeDocId || isGenerating) return;
 
     const userMessageId = `user-${Date.now()}`;
     const newUserMessage: ChatMessage = {
       id: userMessageId,
       role: 'user',
       content: userText,
-      createdAt: 'Just now',
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
+
+    const threadBefore = documentMessages[activeDocId] || [];
 
     // Append user message immediately
     setDocumentMessages(prev => ({
       ...prev,
-      [activeDocId]: [...(prev[activeDocId] || []), newUserMessage],
+      [activeDocId]: [...threadBefore, newUserMessage],
     }));
 
     setIsGenerating(true);
 
-    // Simulate realistic RAG retrieval & response generation (Phase 1 mock)
-    setTimeout(() => {
-      const activeDoc = documents.find(d => d.id === activeDocId);
-      const isFin = activeDoc?.id === 'doc-q3-financials';
+    const assistantMessageId = `ai-${Date.now()}`;
+    const initialAssistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      citations: [],
+    };
 
-      const mockCitation: Citation = isFin
-        ? {
-            id: `cit-${Date.now()}`,
-            pageNumber: 8,
-            sectionTitle: 'Operational Expenditure & Unit Economics',
-            snippet:
-              'Blended customer acquisition cost (CAC) dropped to $14,200 from $16,800 in Q2. Payback period reduced to 11.2 months as inbound organic demo conversions increased by 28%.',
-            score: 0.93,
+    setDocumentMessages(prev => ({
+      ...prev,
+      [activeDocId]: [...(prev[activeDocId] || []), initialAssistantMessage],
+    }));
+
+    // Build chat history summary
+    const chatHistory = threadBefore
+      .slice(-4)
+      .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n');
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: activeDocId,
+          question: userText,
+          chatHistory,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response stream received.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulatedContent = '';
+      let collectedCitations: Citation[] = [];
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.type === 'citations') {
+              collectedCitations = data.citations || [];
+              setDocumentMessages(prev => {
+                const thread = prev[activeDocId] || [];
+                return {
+                  ...prev,
+                  [activeDocId]: thread.map(msg =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, citations: collectedCitations }
+                      : msg
+                  ),
+                };
+              });
+            } else if (data.type === 'delta') {
+              accumulatedContent += data.text;
+              setDocumentMessages(prev => {
+                const thread = prev[activeDocId] || [];
+                return {
+                  ...prev,
+                  [activeDocId]: thread.map(msg =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  ),
+                };
+              });
+            } else if (data.type === 'error') {
+              throw new Error(data.error);
+            }
+          } catch (jsonErr) {
+            // Ignore single malformed lines
           }
-        : {
-            id: `cit-${Date.now()}`,
-            pageNumber: 6,
-            sectionTitle: 'Section 6.1 — Partition Recovery & Heartbeats',
-            snippet:
-              'In the event of network partition, minority partitions reject write quorums with ErrPartitionIsolated while remaining available for dirty reads up to the configured stale_read_max_ms ceiling.',
-            score: 0.91,
-          };
-
-      const aiResponseContent = isFin
-        ? `According to **Page 8 (Unit Economics)** of the financial report:
-
-- **Customer Acquisition Cost (CAC)** improved significantly, decreasing from **$16,800 in Q2** down to **$14,200 in Q3** (a **15.5% efficiency gain**).
-- **CAC Payback Period** contracted from **13.4 months** to **11.2 months**, outperforming internal forecasts.
-- The primary contributor was a **28% boost in inbound organic conversions** driven by developer documentation and community growth.`
-        : `According to **Page 6 (Partition Recovery)** of the architecture specification:
-
-- The system handles network partitions by strictly enforcing write quorums.
-- Minority partitions reject write operations with an \`ErrPartitionIsolated\` status code.
-- Stale read requests are permissible up to the configured \`stale_read_max_ms\` threshold (default: 250ms), ensuring maximum read availability without violating linearizability guarantees.`;
-
-      const aiMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        content: aiResponseContent,
-        createdAt: 'Just now',
-        citations: [mockCitation],
-      };
-
-      setDocumentMessages(prev => ({
-        ...prev,
-        [activeDocId]: [...(prev[activeDocId] || []), aiMessage],
-      }));
+        }
+      }
+    } catch (err: any) {
+      console.error('Chat generation error:', err);
+      setDocumentMessages(prev => {
+        const thread = prev[activeDocId] || [];
+        return {
+          ...prev,
+          [activeDocId]: thread.map(msg =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  content:
+                    err?.message ||
+                    "I encountered an error retrieving this answer. Please verify your connection and API keys.",
+                }
+              : msg
+          ),
+        };
+      });
+    } finally {
       setIsGenerating(false);
-    }, 1200);
+    }
   };
 
   return (
