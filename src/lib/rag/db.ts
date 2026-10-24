@@ -44,7 +44,18 @@ const memoryDocuments: Map<string, StoredDocument> =
 const memoryChunks: MemoryChunk[] =
   globalThis.__askguru_chunks ?? (globalThis.__askguru_chunks = []);
 
-const DATA_DIR = path.join(process.cwd(), '.data');
+function getDataDir(): string {
+  if (
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    (process.platform !== 'win32' && process.env.NODE_ENV === 'production')
+  ) {
+    return path.join('/tmp', '.askguru_data');
+  }
+  return path.join(process.cwd(), '.data');
+}
+
+const DATA_DIR = getDataDir();
 const STORE_FILE = path.join(DATA_DIR, 'local_store.json');
 
 function saveToDisk() {

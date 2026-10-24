@@ -7,7 +7,7 @@ import { formatFileSize, cn } from '@/lib/utils';
 import { DocumentItem, UploadProgress } from '@/lib/types';
 
 interface UploadZoneProps {
-  onDocumentAdded: (newDoc: DocumentItem) => void;
+  onDocumentAdded: (newDoc: DocumentItem, chunks?: any[]) => void;
   className?: string;
 }
 
@@ -90,7 +90,7 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
         fileName: file.name,
       });
 
-      onDocumentAdded(data.document);
+      onDocumentAdded(data.document, data.chunks);
 
       setTimeout(() => {
         setUploadProgress({ status: 'idle', progress: 0 });

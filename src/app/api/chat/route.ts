@@ -17,7 +17,12 @@ function getApiKey(): string {
   );
 }
 
-const CANDIDATE_MODELS = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+const CANDIDATE_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-latest',
+];
 
 export async function POST(req: NextRequest) {
   // 1. Rate-limiting check
@@ -32,7 +37,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { documentId, question, chatHistory = '' } = body;
+    const { documentId, question, chatHistory = '', fallbackChunks } = body;
 
     if (!question || !question.trim()) {
       return NextResponse.json({ error: 'Question is required.' }, { status: 400 });
@@ -54,7 +59,29 @@ export async function POST(req: NextRequest) {
     const queryEmbedding = await embedText(question, TaskType.RETRIEVAL_QUERY);
 
     // 3. Retrieve top-4 chunks from vector store
-    const retrievedChunks = await searchSimilarChunks(documentId, queryEmbedding, 4);
+    let retrievedChunks = await searchSimilarChunks(documentId, queryEmbedding, 4);
+
+    // If serverless instance restarted and memory chunks were emptied, use client fallback chunks
+    if (retrievedChunks.length === 0 && Array.isArray(fallbackChunks) && fallbackChunks.length > 0) {
+      const qTerms = question.toLowerCase().split(/\W+/).filter((w: string) => w.length > 2);
+      const scored = (fallbackChunks as Array<{ pageNumber: number; text: string }>).map((chunk, idx) => {
+        const textLower = chunk.text.toLowerCase();
+        let matchCount = 0;
+        for (const term of qTerms) {
+          if (textLower.includes(term)) matchCount++;
+        }
+        return {
+          id: `fallback-${idx}-${chunk.pageNumber}`,
+          documentId,
+          pageNumber: chunk.pageNumber,
+          chunkIndex: idx,
+          text: chunk.text,
+          similarity: Math.min(0.95, 0.4 + (matchCount / (qTerms.length || 1)) * 0.55),
+        };
+      });
+      scored.sort((a, b) => b.similarity - a.similarity);
+      retrievedChunks = scored.slice(0, 4);
+    }
 
     const citations: Citation[] = retrievedChunks.map((chunk, idx) => ({
       id: `cit-${idx + 1}-${chunk.pageNumber}`,
@@ -92,7 +119,7 @@ ANSWER:`;
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    // Try candidate models with automatic fallback
+    // Try candidate models with automatic fallback and 7s timeout per model
     let streamResult: any = null;
     let selectedModel = '';
 
@@ -100,9 +127,20 @@ ANSWER:`;
       try {
         const model = genAI.getGenerativeModel({
           model: modelName,
-          generationConfig: { temperature: 0.1 },
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 800,
+          },
         });
-        streamResult = await model.generateContentStream(systemPrompt);
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout: ${modelName} exceeded 7s`)), 7000)
+        );
+
+        streamResult = await Promise.race([
+          model.generateContentStream(systemPrompt),
+          timeoutPromise,
+        ]);
         selectedModel = modelName;
         break;
       } catch (err: any) {
@@ -119,7 +157,7 @@ ANSWER:`;
     const readable = new ReadableStream({
       async start(controller) {
         // First emit citation metadata
-        const metadataEvent = JSON.stringify({ type: 'citations', citations }) + '\n';
+        const metadataEvent = JSON.stringify({ type: 'citations', citations, model: selectedModel }) + '\n';
         controller.enqueue(encoder.encode(metadataEvent));
 
         try {
@@ -151,6 +189,7 @@ ANSWER:`;
         'Content-Type': 'application/x-ndjson; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
   } catch (err: any) {

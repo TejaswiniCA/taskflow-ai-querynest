@@ -10,6 +10,7 @@ import { DocumentItem, ChatMessage, Citation } from '@/lib/types';
 
 export default function AskGuruPage() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [documentChunks, setDocumentChunks] = useState<Record<string, any[]>>({});
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [documentMessages, setDocumentMessages] = useState<Record<string, ChatMessage[]>>({});
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
@@ -55,9 +56,15 @@ export default function AskGuruPage() {
     setActiveDocId(null);
   };
 
-  const handleDocumentAdded = (newDoc: DocumentItem) => {
+  const handleDocumentAdded = (newDoc: DocumentItem, chunks?: any[]) => {
     setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)]);
     setActiveDocId(newDoc.id);
+    if (chunks && chunks.length > 0) {
+      setDocumentChunks(prev => ({
+        ...prev,
+        [newDoc.id]: chunks,
+      }));
+    }
     setDocumentMessages(prev => ({
       ...prev,
       [newDoc.id]: [],
@@ -119,16 +126,25 @@ export default function AskGuruPage() {
       .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
       .join('\n');
 
+    const abortCtrl = new AbortController();
+    const abortTimeout = setTimeout(() => {
+      abortCtrl.abort();
+    }, 28000);
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: abortCtrl.signal,
         body: JSON.stringify({
           documentId: activeDocId,
           question: userText,
           chatHistory,
+          fallbackChunks: documentChunks[activeDocId] || [],
         }),
       });
+
+      clearTimeout(abortTimeout);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -193,6 +209,11 @@ export default function AskGuruPage() {
       }
     } catch (err: any) {
       console.error('Chat generation error:', err);
+      const isTimeout = err?.name === 'AbortError' || err?.message?.includes('aborted');
+      const errorText = isTimeout
+        ? 'The request took too long to respond. The document context is retained—please try asking your question again.'
+        : (err?.message || 'I encountered an error retrieving this answer. Please verify your connection and try again.');
+
       setDocumentMessages(prev => {
         const thread = prev[activeDocId] || [];
         return {
@@ -201,15 +222,14 @@ export default function AskGuruPage() {
             msg.id === assistantMessageId
               ? {
                   ...msg,
-                  content:
-                    err?.message ||
-                    "I encountered an error retrieving this answer. Please verify your connection and API keys.",
+                  content: errorText,
                 }
               : msg
           ),
         };
       });
     } finally {
+      clearTimeout(abortTimeout);
       setIsGenerating(false);
     }
   };

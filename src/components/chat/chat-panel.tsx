@@ -7,7 +7,6 @@ import { EmptyChatState } from './empty-chat-state';
 import { TypingIndicator } from './typing-indicator';
 import { ChatInput } from './chat-input';
 import { ChatMessage, Citation, DocumentItem } from '@/lib/types';
-import { cn } from '@/lib/utils';
 
 interface ChatPanelProps {
   document: DocumentItem | null;
@@ -50,6 +49,10 @@ export function ChatPanel({
     setUserScrolledUp(false);
   };
 
+  const visibleMessages = messages.filter(
+    msg => msg.role === 'user' || msg.content.trim().length > 0
+  );
+
   return (
     <div className="relative flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden bg-background">
       {/* Scrollable Message Timeline */}
@@ -59,7 +62,7 @@ export function ChatPanel({
         className="flex-1 overflow-y-auto px-4 sm:px-6 py-6"
       >
         <div className="max-w-chat mx-auto w-full space-y-4">
-          {messages.length === 0 && document ? (
+          {visibleMessages.length === 0 && document ? (
             <EmptyChatState
               documentTitle={document.title}
               pageCount={document.pageCount}
@@ -67,7 +70,7 @@ export function ChatPanel({
               onSelectQuestion={onSendMessage}
             />
           ) : (
-            messages.map(msg => (
+            visibleMessages.map(msg => (
               <ChatMessageItem
                 key={msg.id}
                 message={msg}

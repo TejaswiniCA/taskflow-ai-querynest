@@ -17,7 +17,7 @@ import { DocumentItem, UploadProgress } from '@/lib/types';
 import { formatFileSize, cn } from '@/lib/utils';
 
 interface LandingHeroProps {
-  onDocumentAdded: (newDoc: DocumentItem) => void;
+  onDocumentAdded: (newDoc: DocumentItem, chunks?: any[]) => void;
 }
 
 export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
@@ -96,7 +96,7 @@ export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
         fileName: file.name,
       });
 
-      onDocumentAdded(data.document);
+      onDocumentAdded(data.document, data.chunks);
 
       setTimeout(() => {
         setUploadProgress({ status: 'idle', progress: 0 });

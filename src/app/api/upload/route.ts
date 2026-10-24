@@ -97,6 +97,12 @@ export async function POST(req: NextRequest) {
       success: true,
       document: clientDocument,
       chunksCount: chunks.length,
+      chunks: chunks.map(c => ({
+        id: c.id,
+        pageNumber: c.pageNumber,
+        chunkIndex: c.chunkIndex,
+        text: c.text,
+      })),
     });
   } catch (err: any) {
     console.error('Upload processing error:', err);
