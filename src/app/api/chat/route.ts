@@ -17,6 +17,8 @@ function getApiKey(): string {
   );
 }
 
+const CANDIDATE_MODELS = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+
 export async function POST(req: NextRequest) {
   // 1. Rate-limiting check
   const ip = req.headers.get('x-forwarded-for') || req.ip || '127.0.0.1';
@@ -70,12 +72,13 @@ export async function POST(req: NextRequest) {
       )
       .join('\n\n---\n\n');
 
-    const systemPrompt = `You are AskGuru, a precise document interrogation assistant.
+    const systemPrompt = `You are AskGuru, a helpful and precise document interrogation assistant.
 Answer the user's prompt or question based strictly and ONLY on the provided context passages below.
 Be concise, clear, and direct.
 Do not include conversational filler, apologies, meta-commentary, or stray quote characters.
+Interpret terms like "jd", "job description", "resume", "profile", "paper", "report", or "this" as referring to the provided document context. If the user asks for a job description or JD and the document is a candidate resume or profile instead (or vice versa), clarify what the document is and thoroughly explain its contents from the context passages.
 If the user asks an open-ended request like "explain this", "summarize", or "what is this about?", provide a concise explanation and summary of the provided context passages.
-Only if the requested topic is completely unrelated or absent from the context passages, respond EXACTLY with:
+Only if the requested topic is completely unrelated (e.g. sports trivia, weather, cooking) and absent from the context passages, respond EXACTLY with:
 "I couldn't find that in your documents."
 
 CONTEXT PASSAGES:
@@ -88,14 +91,28 @@ ${question}
 ANSWER:`;
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: {
-        temperature: 0.1,
-      },
-    });
 
-    const streamResult = await model.generateContentStream(systemPrompt);
+    // Try candidate models with automatic fallback
+    let streamResult: any = null;
+    let selectedModel = '';
+
+    for (const modelName of CANDIDATE_MODELS) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: { temperature: 0.1 },
+        });
+        streamResult = await model.generateContentStream(systemPrompt);
+        selectedModel = modelName;
+        break;
+      } catch (err: any) {
+        console.warn(`Model ${modelName} stream initiation failed, trying next candidate:`, err.message);
+      }
+    }
+
+    if (!streamResult) {
+      throw new Error('All Gemini models are temporarily busy or rate-limited. Please retry in a few moments.');
+    }
 
     // Stream as NDJSON lines for reliable client consumption
     const encoder = new TextEncoder();
