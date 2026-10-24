@@ -1,0 +1,262 @@
+'use client';
+
+import React, { useState, useRef } from 'react';
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { formatFileSize, cn } from '@/lib/utils';
+import { DocumentItem, UploadProgress } from '@/lib/types';
+
+interface UploadZoneProps {
+  onDocumentAdded: (newDoc: DocumentItem) => void;
+  className?: string;
+}
+
+export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
+    status: 'idle',
+    progress: 0,
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const simulateProcessing = (file: File) => {
+    setUploadProgress({
+      status: 'uploading',
+      progress: 20,
+      fileName: file.name,
+    });
+
+    setTimeout(() => {
+      setUploadProgress(prev => ({
+        ...prev,
+        status: 'parsing',
+        progress: 55,
+      }));
+    }, 600);
+
+    setTimeout(() => {
+      setUploadProgress(prev => ({
+        ...prev,
+        status: 'embedding',
+        progress: 85,
+      }));
+    }, 1300);
+
+    setTimeout(() => {
+      setUploadProgress(prev => ({
+        ...prev,
+        status: 'ready',
+        progress: 100,
+      }));
+
+      // Create new mock document item
+      const estPages = Math.max(1, Math.round(file.size / (1024 * 120)));
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+
+      const newDoc: DocumentItem = {
+        id: `doc-${Date.now()}`,
+        title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
+        filename: file.name,
+        sizeBytes: file.size,
+        pageCount: estPages,
+        uploadedAt: 'Just now',
+        suggestedQuestions: [
+          `Summarize the key objectives of ${cleanTitle}.`,
+          'What are the primary recommendations outlined in this document?',
+          'Extract all numerical figures and timeline milestones.',
+          'List any potential risks or limitations highlighted.',
+        ],
+        initialMessages: [],
+      };
+
+      onDocumentAdded(newDoc);
+
+      // Reset to idle after short celebration
+      setTimeout(() => {
+        setUploadProgress({ status: 'idle', progress: 0 });
+      }, 1500);
+    }, 2000);
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    // Validation (PDF or TXT, max 5 MB)
+    const validExtensions = ['.pdf', '.txt'];
+    const hasValidExt = validExtensions.some(ext =>
+      file.name.toLowerCase().endsWith(ext)
+    );
+
+    if (!hasValidExt) {
+      setUploadProgress({
+        status: 'error',
+        progress: 0,
+        fileName: file.name,
+        errorMessage: 'Only PDF and TXT documents are supported.',
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadProgress({
+        status: 'error',
+        progress: 0,
+        fileName: file.name,
+        errorMessage: `File exceeds 5 MB limit (${formatFileSize(file.size)}).`,
+      });
+      return;
+    }
+
+    simulateProcessing(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFiles(e.dataTransfer.files);
+  };
+
+  return (
+    <div className={cn('space-y-3', className)}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.txt"
+        className="hidden"
+        onChange={e => handleFiles(e.target.files)}
+      />
+
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => {
+          if (uploadProgress.status === 'idle' || uploadProgress.status === 'error') {
+            fileInputRef.current?.click();
+          }
+        }}
+        className={cn(
+          'relative flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-dashed transition-all duration-200 cursor-pointer select-none text-center',
+          isDragging
+            ? 'border-indigo-500 bg-indigo-500/10 scale-[1.01]'
+            : 'border-border/80 hover:border-indigo-500/40 bg-card/40 hover:bg-card/70',
+          uploadProgress.status !== 'idle' &&
+            uploadProgress.status !== 'error' &&
+            'pointer-events-none'
+        )}
+      >
+        <AnimatePresence mode="wait">
+          {uploadProgress.status === 'idle' && (
+            <motion.div
+              key="idle"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 flex items-center justify-center mx-auto">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-foreground">
+                  Drop PDF or TXT here
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  or click to browse • Up to 5 MB
+                </p>
+              </div>
+            </motion.div>
+          )}
+
+          {(uploadProgress.status === 'uploading' ||
+            uploadProgress.status === 'parsing' ||
+            uploadProgress.status === 'embedding') && (
+            <motion.div
+              key="busy"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full space-y-2.5 py-1"
+            >
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="flex items-center gap-1.5 text-foreground truncate max-w-[140px]">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+                  {uploadProgress.status === 'uploading' && 'Uploading...'}
+                  {uploadProgress.status === 'parsing' && 'Extracting text...'}
+                  {uploadProgress.status === 'embedding' && 'Embedding vectors...'}
+                </span>
+                <span className="text-indigo-500 font-semibold">{uploadProgress.progress}%</span>
+              </div>
+
+              {/* Animated Progress Bar */}
+              <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  className="h-full bg-indigo-600 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${uploadProgress.progress}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+
+              <p className="text-[11px] text-muted-foreground truncate">
+                {uploadProgress.fileName}
+              </p>
+            </motion.div>
+          )}
+
+          {uploadProgress.status === 'ready' && (
+            <motion.div
+              key="ready"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-2 text-emerald-500 text-xs font-semibold py-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Ready for questioning!</span>
+            </motion.div>
+          )}
+
+          {uploadProgress.status === 'error' && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-1 py-1"
+            >
+              <div className="flex items-center justify-center gap-1.5 text-destructive text-xs font-medium">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>Upload Failed</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {uploadProgress.errorMessage}
+              </p>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setUploadProgress({ status: 'idle', progress: 0 });
+                }}
+                className="text-[11px] text-indigo-500 hover:underline pt-1 font-semibold"
+              >
+                Try again
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
