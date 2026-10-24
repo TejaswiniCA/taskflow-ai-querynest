@@ -20,7 +20,7 @@ function getApiKey(): string {
 export async function POST(req: NextRequest) {
   // 1. Rate-limiting check
   const ip = req.headers.get('x-forwarded-for') || req.ip || '127.0.0.1';
-  const rateLimit = checkRateLimit(ip, 30, 60000);
+  const rateLimit = checkRateLimit(ip, 40, 60000);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: `Too many chat requests. Please wait ${Math.ceil(rateLimit.resetMs / 1000)} seconds.` },
@@ -71,10 +71,11 @@ export async function POST(req: NextRequest) {
       .join('\n\n---\n\n');
 
     const systemPrompt = `You are AskGuru, a precise document interrogation assistant.
-Answer the user's question based ONLY on the provided context passages below.
-Be concise and direct.
+Answer the user's prompt or question based strictly and ONLY on the provided context passages below.
+Be concise, clear, and direct.
 Do not include conversational filler, apologies, meta-commentary, or stray quote characters.
-If the answer cannot be found in the provided context, respond EXACTLY with:
+If the user asks an open-ended request like "explain this", "summarize", or "what is this about?", provide a concise explanation and summary of the provided context passages.
+Only if the requested topic is completely unrelated or absent from the context passages, respond EXACTLY with:
 "I couldn't find that in your documents."
 
 CONTEXT PASSAGES:

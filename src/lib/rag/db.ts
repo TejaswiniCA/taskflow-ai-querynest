@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
 import { DocumentChunk } from './chunker';
 
 export interface StoredDocument {
@@ -30,8 +32,63 @@ interface MemoryChunk {
   embedding: number[];
 }
 
-const memoryDocuments: Map<string, StoredDocument> = new Map();
-const memoryChunks: MemoryChunk[] = [];
+declare global {
+  // eslint-disable-next-line no-var
+  var __askguru_docs: Map<string, StoredDocument> | undefined;
+  // eslint-disable-next-line no-var
+  var __askguru_chunks: MemoryChunk[] | undefined;
+}
+
+const memoryDocuments: Map<string, StoredDocument> =
+  globalThis.__askguru_docs ?? (globalThis.__askguru_docs = new Map());
+const memoryChunks: MemoryChunk[] =
+  globalThis.__askguru_chunks ?? (globalThis.__askguru_chunks = []);
+
+const DATA_DIR = path.join(process.cwd(), '.data');
+const STORE_FILE = path.join(DATA_DIR, 'local_store.json');
+
+function saveToDisk() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const data = {
+      docs: Array.from(memoryDocuments.entries()),
+      chunks: memoryChunks,
+    };
+    fs.writeFileSync(STORE_FILE, JSON.stringify(data));
+  } catch (err) {
+    // Ignore file write errors in read-only environments
+  }
+}
+
+function loadFromDisk() {
+  try {
+    if (fs.existsSync(STORE_FILE)) {
+      const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.docs && Array.isArray(data.docs)) {
+        for (const [k, v] of data.docs) {
+          if (!memoryDocuments.has(k)) {
+            memoryDocuments.set(k, { ...v, createdAt: new Date(v.createdAt) });
+          }
+        }
+      }
+      if (data.chunks && Array.isArray(data.chunks)) {
+        for (const c of data.chunks) {
+          if (!memoryChunks.some(existing => existing.id === c.id)) {
+            memoryChunks.push(c);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Ignore load errors
+  }
+}
+
+// Initial load
+loadFromDisk();
 
 let pool: Pool | null = null;
 let isInitialized = false;
@@ -160,7 +217,7 @@ export async function saveDocumentWithChunks(
     }
   }
 
-  // Fallback in-memory storage
+  // Fallback in-memory storage + disk persistence
   memoryDocuments.set(doc.id, doc);
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
@@ -173,6 +230,7 @@ export async function saveDocumentWithChunks(
       embedding: embeddings[i],
     });
   }
+  saveToDisk();
 }
 
 /**
@@ -228,7 +286,14 @@ export async function searchSimilarChunks(
   }
 
   // In-memory vector cosine similarity calculation
+  loadFromDisk();
   const docChunks = memoryChunks.filter(c => c.documentId === documentId);
+
+  // If there are few chunks, return all of them
+  if (docChunks.length === 0) {
+    return [];
+  }
+
   const scored = docChunks.map(c => ({
     id: c.id,
     documentId: c.documentId,
@@ -268,5 +333,6 @@ export async function listStoredDocuments(): Promise<StoredDocument[]> {
     }
   }
 
+  loadFromDisk();
   return Array.from(memoryDocuments.values());
 }
