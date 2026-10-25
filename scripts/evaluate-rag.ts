@@ -82,7 +82,7 @@ const BENCHMARK_QUESTIONS: BenchmarkQuestion[] = [
 
 async function runBenchmark() {
   console.log('='.repeat(70));
-  console.log('  AskGuru RAG Retrieval Benchmark (10 Verification Queries)');
+  console.log('  QueryNest RAG Retrieval Benchmark (10 Verification Queries)');
   console.log('='.repeat(70));
 
   const pdfPath = path.join(__dirname, '../docs/sample_document.pdf');

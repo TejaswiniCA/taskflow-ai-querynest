@@ -13,7 +13,7 @@ export const maxDuration = 60; // 60 seconds max execution
 
 export async function POST(req: NextRequest) {
   // Rate-limiting check
-  const ip = req.headers.get('x-forwarded-for') || req.ip || '127.0.0.1';
+  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
   const rateLimit = checkRateLimit(ip, 20, 60000);
   if (!rateLimit.allowed) {
     return NextResponse.json(

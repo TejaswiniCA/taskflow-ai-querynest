@@ -1,8 +1,10 @@
-# AskGuru
+# TaskFlow AI + QueryNest
 
 > **Ask your documents. Get answers with proof.**
 
-AskGuru is a production-grade, verifiable RAG (Retrieval-Augmented Generation) document intelligence platform. It ingests complex PDFs and text files, slices them into overlapping token windows, indexes them with 3072-dimensional Gemini vector embeddings into PostgreSQL with `pgvector`, and produces strictly grounded responses with clickable citation chips linked directly to the original page excerpt.
+TaskFlow AI + QueryNest is a local interview demo combining PostgreSQL-backed task management with document question answering. QueryNest ingests PDFs and text files, creates Gemini vector embeddings, and returns grounded answers with page-level citations.
+
+> **Local-only security status:** TaskFlow can use an opt-in local development identity that maps to `local-development-user`; it is a development shortcut, not authentication. Better Auth requires its own configuration and reviewed database migration. QueryNest document upload, listing, and chat APIs remain unauthenticated and are not scoped to users. Keep the app bound to localhost. Do not deploy it publicly or treat it as production-ready until authentication and authorization protect all APIs and stored data, and the deployment configuration has been reviewed. The existing development task is preserved.
 
 ---
 
@@ -54,9 +56,9 @@ flowchart TD
 ## ⚡ Setup & Local Run
 
 ### Prerequisites
-- Node.js 18+ (tested on Node v22)
-- Google Gemini API Key ([Google AI Studio](https://aistudio.google.com/))
-- (Optional) PostgreSQL with `pgvector` URL (e.g. Neon, Supabase)
+- Node.js 22+ (the current lockfile includes a dependency requiring Node 22)
+- PostgreSQL for TaskFlow task persistence
+- Google Gemini API key ([Google AI Studio](https://aistudio.google.com/)) to use document upload and AI chat
 
 ### 1. Installation
 ```bash
@@ -75,19 +77,44 @@ Populate `.env.local`:
 # Google Gemini API Key
 GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
 
-# PostgreSQL with pgvector (leave blank to use the built-in local vector fallback)
+# PostgreSQL connection used by TaskFlow; QueryNest also uses it when available
 DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+
+# Better Auth (generate a unique secret with: openssl rand -base64 32)
+BETTER_AUTH_SECRET=replace_with_a_random_secret_of_at_least_32_characters
+BETTER_AUTH_URL=http://localhost:3000
+
+# Local interview demo without OAuth; only active with NODE_ENV=development
+TASKFLOW_LOCAL_AUTH=true
+
+# Google OAuth web client credentials; these are separate from Gemini API keys
+TASKFLOW_GOOGLE_CLIENT_ID=your_google_oauth_client_id
+TASKFLOW_GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+TASKFLOW_ALLOWED_EMAIL=you@example.com
 ```
 
-### 3. Run Production Build
+For local interview development, keep `TASKFLOW_LOCAL_AUTH=true` in `.env.local` and use `npm run dev`. The development server binds to `127.0.0.1`; the local identity always uses `local-development-user` and can see the existing task with that owner. This is a single-user shortcut, not authentication. Do not expose the server to your network or deploy with this setting.
+
+### Optional Google OAuth setup
+
+Create an OAuth client in Google Cloud Console under **APIs & Services → Credentials → Create Credentials → OAuth client ID → Web application**. Add the app's local origin under **Authorized JavaScript origins** and add this exact redirect URI under **Authorized redirect URIs**:
+
+```text
+http://localhost:3000/api/auth/callback/google
+```
+
+Use the same port in `BETTER_AUTH_URL`; if Next.js selects another port, update both values and the Google Console URI to match. Add the allowed Google account as a test user in the OAuth consent screen while the consent app is in testing mode. Store the OAuth client ID and secret only in `.env.local`.
+
+For Google OAuth, set `TASKFLOW_LOCAL_AUTH=false` and configure the Better Auth environment variables. The local identity is ignored outside `NODE_ENV=development`.
+
+The Better Auth SQL in `db/migrations/002_better_auth.sql` is unapplied and requires review before use. It creates auth tables and adds an unvalidated foreign key; it does not reassign the development-owned task. Do not treat this file as an applied schema change.
+
+### 3. Check a local build
 ```bash
-# Compile optimized production bundle
+# Compile the app; a successful build does not mean it is safe to deploy
 npm run build
-
-# Start production server
-npm run start
 ```
-Access the application at [http://localhost:3000](http://localhost:3000).
+Run the development server with `npm run dev` and open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 ---
 
@@ -109,23 +136,15 @@ Executes 10 ground-truth verification queries against a sample 15-page machine l
 ```bash
 npm run test:e2e
 ```
-Validates:
-- (a) Document exploration, question interrogation, and citation chip mounting.
-- (b) Off-topic questions producing the strict fallback message.
-- (c) Invalid file format rejection with user-friendly error banners.
+The QueryNest Playwright tests use `docs/sample_document.pdf`, parse and chunk it with the project code, and intercept every browser `/api/*` request with per-test in-memory fixtures. They do not call Gemini, the PostgreSQL document store, or the real upload/chat API handlers. This verifies the UI request/response flow, not live vector retrieval or model grounding.
+
+The suite validates unsupported-file feedback, sample PDF upload UI, streamed answer/citation rendering, and rendering of the fallback response supplied by the isolated chat fixture.
 
 ---
 
-## 🚀 Vercel Deployment Checklist
+## Deployment status: not ready for public use
 
-1. **Repository**: Push the codebase to GitHub / GitLab.
-2. **Import Project**: In the [Vercel Dashboard](https://vercel.com/new), select the repository and use framework preset **Next.js**.
-3. **Environment Variables**:
-   - `GOOGLE_GENERATIVE_AI_API_KEY`: Your Gemini API key.
-   - `DATABASE_URL`: Your Neon or Supabase serverless PostgreSQL connection string (including `sslmode=require`).
-4. **Build Command**: `next build` (default).
-5. **Output Directory**: `.next` (default).
-6. **Deploy**: Trigger deployment. Vercel automatically runs the build and hosts the serverless API routes with edge caching.
+This repository currently describes a local interview demo. QueryNest upload, document listing, and chat endpoints are unauthenticated and do not enforce per-user document ownership. The local development identity is not authentication, and the Better Auth migration remains unapplied. Do not deploy this app publicly or use it for private documents until these gaps and the production configuration have been addressed and reviewed.
 
 ---
 
@@ -137,4 +156,4 @@ Validates:
 
 ---
 
-<sub>AskGuru is an independent learning project, not affiliated with any other product named Guru.</sub>
+<sub>QueryNest is an independent learning project for grounded document question answering.</sub>

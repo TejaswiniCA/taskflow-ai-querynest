@@ -33,8 +33,8 @@ export function Wordmark({ className, iconSize = 'md', showTagline = false }: Wo
       </div>
       <div className="flex flex-col">
         <div className="flex items-center font-bold tracking-tight text-foreground text-lg leading-tight">
-          <span>Ask</span>
-          <span className="text-indigo-500 dark:text-indigo-400">Guru</span>
+          <span>Query</span>
+          <span className="text-indigo-500 dark:text-indigo-400">Nest</span>
         </div>
         {showTagline && (
           <span className="text-xs text-muted-foreground font-normal">

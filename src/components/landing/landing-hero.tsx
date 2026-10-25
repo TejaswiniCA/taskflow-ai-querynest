@@ -141,7 +141,7 @@ export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
       icon: ShieldCheck,
       title: 'Zero Hallucinations',
       description:
-        'Grounded strictly in your uploaded materials. When a question cannot be answered from the document, AskGuru directly informs you rather than guessing.',
+        'Grounded strictly in your uploaded materials. When a question cannot be answered from the document, QueryNest tells you rather than guessing.',
     },
     {
       icon: Zap,

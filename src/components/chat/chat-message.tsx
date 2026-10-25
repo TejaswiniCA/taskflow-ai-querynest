@@ -49,7 +49,7 @@ export function ChatMessageItem({ message, onCitationClick }: ChatMessageProps) 
       >
         {/* Author metadata & Timestamp */}
         <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground select-none">
-          <span className="font-semibold">{isUser ? 'You' : 'AskGuru'}</span>
+          <span className="font-semibold">{isUser ? 'You' : 'QueryNest'}</span>
           <span>•</span>
           <span>{message.createdAt}</span>
         </div>

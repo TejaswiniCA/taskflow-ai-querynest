@@ -1,10 +1,10 @@
-# AGENTS.md — AskGuru Guidelines & Project Rules
+# AGENTS.md — QueryNest Guidelines & Project Rules
 
 ## 1. Project Overview & Identity
-- **Application**: **AskGuru** (folder: `askguru-docs`)
+- **Application**: **QueryNest** (folder: `askguru-docs`)
 - **Tagline**: *"Ask your documents. Get answers with proof."*
 - **Description**: Production-grade RAG web app providing grounded document Q&A with verifiable page-level citation chips.
-- **Disclaimer**: AskGuru is an independent learning project, not affiliated with any other product named Guru.
+- **Identity**: QueryNest is an independent learning project for grounded document question answering.
 
 ## 2. Core Architecture & Tech Stack
 - **Framework**: Next.js 14 App Router + TypeScript (strict mode)

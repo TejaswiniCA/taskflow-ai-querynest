@@ -106,7 +106,7 @@ export function Sidebar({
 
           <div className="pt-2 text-center">
             <p className="text-[11px] text-muted-foreground/80 leading-tight">
-              AskGuru • Verifiable RAG Intelligence
+              QueryNest • Verifiable document answers
             </p>
           </div>
         </div>

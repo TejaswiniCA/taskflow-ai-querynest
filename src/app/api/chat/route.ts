@@ -26,7 +26,7 @@ const CANDIDATE_MODELS = [
 
 export async function POST(req: NextRequest) {
   // 1. Rate-limiting check
-  const ip = req.headers.get('x-forwarded-for') || req.ip || '127.0.0.1';
+  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
   const rateLimit = checkRateLimit(ip, 40, 60000);
   if (!rateLimit.allowed) {
     return NextResponse.json(
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       )
       .join('\n\n---\n\n');
 
-    const systemPrompt = `You are AskGuru, a helpful and precise document interrogation assistant.
+    const systemPrompt = `You are QueryNest, a helpful and precise document interrogation assistant.
 Answer the user's prompt or question based strictly and ONLY on the provided context passages below.
 Be concise, clear, and direct.
 Do not include conversational filler, apologies, meta-commentary, or stray quote characters.

@@ -147,7 +147,7 @@ export function CitationDrawer({
               {/* Explanation Note */}
               <div className="rounded-xl border border-border bg-card/40 p-4 text-xs text-muted-foreground leading-relaxed">
                 <strong className="text-foreground font-semibold">Strict Grounding Rule:</strong>{' '}
-                AskGuru retrieves this chunk using cosine similarity over Gemini vector embeddings,
+                QueryNest retrieves this chunk using cosine similarity over Gemini vector embeddings,
                 ensuring every fact presented in the chat answers from this source excerpt.
               </div>
             </div>

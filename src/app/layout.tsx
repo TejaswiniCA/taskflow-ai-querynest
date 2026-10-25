@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'AskGuru — Ask your documents. Get answers with proof.',
+  title: 'TaskFlow AI — Personal Workspace',
   description:
-    'A polished, production-grade RAG platform that turns complex PDFs and text documents into verifiable answers with page-level citations.',
+    'Organize personal tasks and explore documents with source-cited answers.',
   icons: {
     icon: '/favicon.ico',
   },
