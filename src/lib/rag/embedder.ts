@@ -29,9 +29,9 @@ export async function embedText(
       taskType,
     });
     return result.embedding.values;
-  } catch (err: any) {
-    console.error('Gemini embedding generation error:', err);
-    throw new Error(`Failed to generate embeddings: ${err?.message || err}`);
+  } catch {
+    console.error('Gemini embedding generation failed.');
+    throw new Error('Failed to generate embeddings.');
   }
 }
 

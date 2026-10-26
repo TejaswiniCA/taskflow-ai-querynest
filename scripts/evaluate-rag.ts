@@ -7,7 +7,7 @@ import path from 'path';
 import { extractTextPerPage } from '../src/lib/rag/extractor';
 import { chunkPages } from '../src/lib/rag/chunker';
 import { embedBatch, embedText } from '../src/lib/rag/embedder';
-import { saveDocumentWithChunks, searchSimilarChunks } from '../src/lib/rag/db';
+import { rankVectors } from '../src/lib/rag/vector-search';
 import { TaskType } from '@google/generative-ai';
 
 interface BenchmarkQuestion {
@@ -104,29 +104,24 @@ async function runBenchmark() {
   const embeddings = await embedBatch(chunkTexts);
   console.log(`✓ Generated ${embeddings.length} embeddings (dimension: ${embeddings[0].length}).`);
 
-  const docId = 'benchmark-transformer-paper';
-  await saveDocumentWithChunks(
-    {
-      id: docId,
-      title: 'Attention Is All You Need',
-      filename: 'sample_document.pdf',
-      sizeBytes: buffer.length,
-      pageCount: pages.length,
-      suggestedQuestions: [],
-      createdAt: new Date(),
-    },
-    chunks,
-    embeddings
-  );
+  const indexedChunks = chunks.map((chunk, index) => ({ ...chunk, embedding: embeddings[index] }));
 
   console.log('\n[4/4] Executing 10 Test Questions against Vector Index...\n');
 
   let passed = 0;
-  const results: any[] = [];
+  const results: Array<{
+    id: number;
+    category: string;
+    question: string;
+    expected: string;
+    retrieved: string;
+    topScore: string;
+    hit: 'PASS' | 'FAIL';
+  }> = [];
 
   for (const q of BENCHMARK_QUESTIONS) {
     const queryEmb = await embedText(q.question, TaskType.RETRIEVAL_QUERY);
-    const topChunks = await searchSimilarChunks(docId, queryEmb, 4);
+    const topChunks = rankVectors(indexedChunks, queryEmb, 4).map(({ item, similarity }) => ({ ...item, similarity }));
 
     const retrievedPages = topChunks.map(c => c.pageNumber);
     const hit = q.expectedPages.some(expected => retrievedPages.includes(expected));

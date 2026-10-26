@@ -30,7 +30,7 @@ ${sampleText.slice(0, 4000)}`;
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       generationConfig: {
         temperature: 0.3,
         responseMimeType: 'application/json',
@@ -45,8 +45,8 @@ ${sampleText.slice(0, 4000)}`;
       return parsed.slice(0, 4).map(q => String(q).trim());
     }
     return getDefaultQuestions(documentTitle);
-  } catch (err) {
-    console.warn('Failed to generate AI questions, using defaults:', err);
+  } catch {
+    console.warn('AI question suggestions failed; using generic defaults.');
     return getDefaultQuestions(documentTitle);
   }
 }

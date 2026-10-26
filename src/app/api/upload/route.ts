@@ -1,19 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateAndSanitizeFile } from '@/lib/rag/sanitizer';
 import { extractTextPerPage } from '@/lib/rag/extractor';
-import { chunkPages } from '@/lib/rag/chunker';
+import { chunkPages, namespaceChunks } from '@/lib/rag/chunker';
 import { embedBatch } from '@/lib/rag/embedder';
 import { saveDocumentWithChunks } from '@/lib/rag/db';
 import { generateSuggestedQuestions } from '@/lib/rag/suggester';
 import { checkRateLimit } from '@/lib/rag/rate-limiter';
 import { DocumentItem } from '@/lib/types';
+import { randomUUID } from 'node:crypto';
+import { requireAuthenticatedRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds max execution
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuthenticatedRequest(req.headers);
+  if (auth.response) return auth.response;
+  const contentLength = Number(req.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > 5 * 1024 * 1024 + 64 * 1024) {
+    return NextResponse.json({ error: 'Upload exceeds the maximum size of 5 MB.' }, { status: 413 });
+  }
   // Rate-limiting check
-  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
+  const ip = (req.headers.get('x-forwarded-for') || '127.0.0.1').split(',')[0].trim().slice(0, 80);
   const rateLimit = checkRateLimit(ip, 20, 60000);
   if (!rateLimit.allowed) {
     return NextResponse.json(
@@ -24,13 +32,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const formData = await req.formData();
-    const file = formData.get('file') as File | null;
+    const entry = formData.get('file');
+    const file = entry && typeof entry !== 'string' && typeof entry.arrayBuffer === 'function' ? entry : null;
 
     if (!file) {
       return NextResponse.json(
         { error: 'No document file provided in request.' },
         { status: 400 }
       );
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File exceeds the maximum size of 5 MB.' }, { status: 413 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -50,12 +63,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Chunk into overlapping ~800 token windows
-    const chunks = chunkPages(extractedPages, {
+    const docId = `doc-${randomUUID()}`;
+    const chunks = namespaceChunks(docId, chunkPages(extractedPages, {
       targetTokens: 800,
       overlapTokens: 100,
-    });
-
-    const docId = `doc-${Date.now()}`;
+    }));
     const cleanTitle = validated.fileName
       .replace(/\.[^/.]+$/, '')
       .replace(/[_-]/g, ' ')
@@ -97,22 +109,22 @@ export async function POST(req: NextRequest) {
       success: true,
       document: clientDocument,
       chunksCount: chunks.length,
-      chunks: chunks.map(c => ({
-        id: c.id,
-        pageNumber: c.pageNumber,
-        chunkIndex: c.chunkIndex,
-        text: c.text,
-      })),
     });
-  } catch (err: any) {
-    console.error('Upload processing error:', err);
+  } catch (err: unknown) {
+    console.error('Upload processing failed.');
+    const message = err instanceof Error ? err.message : '';
+    const status = message.startsWith('Unsupported file type') ? 415
+      : /File size|File exceeds|Upload exceeds/.test(message) ? 413
+      : /malformed|empty|valid UTF-8|Failed to parse PDF|Could not extract/i.test(message) ? 422
+      : /database|local store/i.test(message) ? 503
+      : 502;
     return NextResponse.json(
       {
-        error:
-          err?.message ||
-          'An unexpected error occurred while processing your document. Please verify your file format and API keys.',
+        error: /^(Unsupported file type|File size|File exceeds|Upload exceeds|The PDF file|The text document|Failed to parse PDF|Could not extract)/.test(message)
+          ? message
+          : 'Could not process this document. Check the file and AI configuration, then try again.',
       },
-      { status: 500 }
+      { status }
     );
   }
 }

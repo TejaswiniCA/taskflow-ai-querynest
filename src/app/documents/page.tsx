@@ -1,19 +1,17 @@
 import { headers } from 'next/headers';
 import { QueryNestWorkspace } from '@/components/querynest/querynest-workspace';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DocumentsPage() {
-  let userEmail: string | null = null;
-  let authMode: 'local-development' | 'better-auth' | null = null;
+  let user;
   try {
-    const user = await getAuthenticatedUser(await headers());
-    userEmail = user?.email ?? null;
-    authMode = user?.authMode ?? null;
+    user = await getAuthenticatedUser(await headers());
   } catch {
-    // Keep QueryNest accessible as before; its APIs remain outside this auth milestone.
+    redirect('/sign-in?error=setup_required');
   }
-
-  return <QueryNestWorkspace userEmail={userEmail} authMode={authMode} />;
+  if (!user) redirect('/sign-in?callbackURL=%2Fdocuments');
+  return <QueryNestWorkspace userEmail={user.email} authMode={user.authMode} />;
 }

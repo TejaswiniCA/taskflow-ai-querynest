@@ -14,6 +14,10 @@ export interface ChunkerOptions {
   overlapTokens?: number; // Default 100 tokens
 }
 
+export function namespaceChunks(documentId: string, chunks: DocumentChunk[]): DocumentChunk[] {
+  return chunks.map((chunk, index) => ({ ...chunk, id: `${documentId}-${index}` }));
+}
+
 /**
  * Estimates token count from text (rule of thumb: ~4 chars per token).
  */

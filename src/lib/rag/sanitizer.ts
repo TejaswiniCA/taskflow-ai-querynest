@@ -37,7 +37,7 @@ export function sanitizeFilename(rawName: string): string {
  * Validates file type, size, and sanitizes filename.
  */
 export function validateAndSanitizeFile(file: File | { name: string; size: number }, buffer: Buffer): ValidatedFile {
-  if (buffer.length > MAX_FILE_SIZE_BYTES) {
+  if (file.size > MAX_FILE_SIZE_BYTES || buffer.length > MAX_FILE_SIZE_BYTES) {
     throw new Error(`File size (${(buffer.length / (1024 * 1024)).toFixed(2)} MB) exceeds the maximum limit of 5 MB.`);
   }
 
@@ -46,8 +46,18 @@ export function validateAndSanitizeFile(file: File | { name: string; size: numbe
 
   let fileType: 'pdf' | 'txt';
   if (ext === '.pdf') {
+    if (!buffer.subarray(0, 1024).includes(Buffer.from('%PDF-'))) {
+      throw new Error('The PDF file is malformed or does not have a valid PDF header.');
+    }
     fileType = 'pdf';
   } else if (ext === '.txt') {
+    let text: string;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buffer); } catch {
+      throw new Error('The text document must contain valid UTF-8 text.');
+    }
+    if (buffer.includes(0) || buffer.length === 0 || text.trim().length === 0) {
+      throw new Error('The text document is empty.');
+    }
     fileType = 'txt';
   } else {
     throw new Error(`Unsupported file type '${ext}'. Only PDF and TXT files are accepted.`);

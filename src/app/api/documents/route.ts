@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listStoredDocuments, deleteStoredDocument } from '@/lib/rag/db';
 import { DocumentItem } from '@/lib/types';
+import { requireAuthenticatedRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = await requireAuthenticatedRequest(req.headers);
+  if (auth.response) return auth.response;
   try {
     const stored = await listStoredDocuments();
     const clientDocs: DocumentItem[] = stored.map(doc => ({
@@ -19,12 +22,14 @@ export async function GET() {
     }));
 
     return NextResponse.json({ documents: clientDocs });
-  } catch (err: any) {
-    return NextResponse.json({ documents: [] });
+  } catch {
+    return NextResponse.json({ error: 'Could not load documents.' }, { status: 503 });
   }
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await requireAuthenticatedRequest(req.headers);
+  if (auth.response) return auth.response;
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -34,7 +39,7 @@ export async function DELETE(req: NextRequest) {
 
     await deleteStoredDocument(id);
     return NextResponse.json({ success: true, deletedId: id });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed to delete document' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'Could not delete the document.' }, { status: 503 });
   }
 }

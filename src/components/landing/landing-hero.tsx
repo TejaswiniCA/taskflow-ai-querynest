@@ -16,9 +16,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DocumentItem, UploadProgress } from '@/lib/types';
 import { formatFileSize, cn } from '@/lib/utils';
 
-interface LandingHeroProps {
-  onDocumentAdded: (newDoc: DocumentItem, chunks?: any[]) => void;
-}
+interface LandingHeroProps { onDocumentAdded: (newDoc: DocumentItem) => void }
 
 export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -96,18 +94,18 @@ export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
         fileName: file.name,
       });
 
-      onDocumentAdded(data.document, data.chunks);
+      onDocumentAdded(data.document);
 
       setTimeout(() => {
         setUploadProgress({ status: 'idle', progress: 0 });
       }, 1200);
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearInterval(progressTimer);
       setUploadProgress({
         status: 'error',
         progress: 0,
         fileName: file.name,
-        errorMessage: err?.message || 'Failed to upload and index document.',
+        errorMessage: err instanceof Error ? err.message : 'Failed to upload and index document.',
       });
     }
   };
@@ -139,9 +137,9 @@ export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
     },
     {
       icon: ShieldCheck,
-      title: 'Zero Hallucinations',
+      title: 'Context Grounding',
       description:
-        'Grounded strictly in your uploaded materials. When a question cannot be answered from the document, QueryNest tells you rather than guessing.',
+        'Answers use passages retrieved from your uploaded document. If retrieval finds no passages, QueryNest says it could not find an answer in your documents.',
     },
     {
       icon: Zap,
@@ -181,7 +179,7 @@ export function LandingHero({ onDocumentAdded }: LandingHeroProps) {
           className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20 shadow-sm"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Production-Grade Document Intelligence</span>
+          <span>Document intelligence for your local workspace</span>
         </motion.div>
 
         {/* Headline */}

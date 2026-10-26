@@ -19,3 +19,5 @@ export interface CreateTaskInput {
   status: TaskStatus;
   dueDate: string | null;
 }
+
+export type UpdateTaskInput = Partial<CreateTaskInput>;

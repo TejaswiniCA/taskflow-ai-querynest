@@ -1,7 +1,9 @@
 import { Pool } from 'pg';
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
 import { DocumentChunk } from './chunker';
+import { rankVectors } from './vector-search';
 
 export interface StoredDocument {
   id: string;
@@ -33,9 +35,7 @@ interface MemoryChunk {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __askguru_docs: Map<string, StoredDocument> | undefined;
-  // eslint-disable-next-line no-var
   var __askguru_chunks: MemoryChunk[] | undefined;
 }
 
@@ -59,18 +59,13 @@ const DATA_DIR = getDataDir();
 const STORE_FILE = path.join(DATA_DIR, 'local_store.json');
 
 function saveToDisk() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const data = {
-      docs: Array.from(memoryDocuments.entries()),
-      chunks: memoryChunks,
-    };
-    fs.writeFileSync(STORE_FILE, JSON.stringify(data));
-  } catch (err) {
-    // Ignore file write errors in read-only environments
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  const data = { docs: Array.from(memoryDocuments.entries()), chunks: memoryChunks };
+  const temporaryFile = `${STORE_FILE}.${randomUUID()}.tmp`;
+  fs.writeFileSync(temporaryFile, JSON.stringify(data), { mode: 0o600 });
+  fs.renameSync(temporaryFile, STORE_FILE);
 }
 
 function loadFromDisk() {
@@ -93,7 +88,7 @@ function loadFromDisk() {
         }
       }
     }
-  } catch (err) {
+  } catch {
     // Ignore load errors
   }
 }
@@ -110,9 +105,12 @@ function getPool(): Pool | null {
     return null;
   }
   if (!pool) {
+    let host = '';
+    try { host = new URL(connectionString).hostname.toLowerCase(); } catch { throw new Error('Document database URL is invalid.'); }
+    const isLoopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host);
     pool = new Pool({
       connectionString,
-      ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: false },
+      ssl: isLoopback ? false : { rejectUnauthorized: true },
       max: 10,
       idleTimeoutMillis: 30000,
     });
@@ -167,9 +165,9 @@ export async function initDb(): Promise<boolean> {
     } finally {
       client.release();
     }
-  } catch (err) {
-    console.warn('Postgres connection failed, falling back to local vector memory store:', err);
-    return false;
+  } catch {
+    console.error('Document database initialization failed.');
+    throw new Error('Document database is unavailable.');
   }
 }
 
@@ -220,15 +218,16 @@ export async function saveDocumentWithChunks(
 
       await client.query('COMMIT');
       return;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('Failed to save document in Postgres, saving to fallback:', err);
+    } catch {
+      await client.query('ROLLBACK').catch(() => undefined);
+      console.error('Document database write failed.');
+      throw new Error('Could not save the document to the configured database.');
     } finally {
       client.release();
     }
   }
 
-  // Fallback in-memory storage + disk persistence
+  // Local-only fallback when no PostgreSQL URL is configured.
   memoryDocuments.set(doc.id, doc);
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
@@ -241,23 +240,11 @@ export async function saveDocumentWithChunks(
       embedding: embeddings[i],
     });
   }
-  saveToDisk();
-}
-
-/**
- * Computes cosine similarity between two numeric vectors.
- */
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+  try { saveToDisk(); } catch {
+    memoryDocuments.delete(doc.id);
+    for (let i = memoryChunks.length - 1; i >= 0; i--) if (memoryChunks[i].documentId === doc.id) memoryChunks.splice(i, 1);
+    throw new Error('Could not persist the document to the local store.');
   }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
 /**
@@ -291,8 +278,9 @@ export async function searchSimilarChunks(
         text: r.chunk_text,
         similarity: parseFloat(r.similarity),
       }));
-    } catch (err) {
-      console.warn('Postgres search query failed, checking memory store:', err);
+    } catch {
+      console.error('Document database retrieval failed.');
+      throw new Error('Could not retrieve document passages from the configured database.');
     }
   }
 
@@ -305,17 +293,14 @@ export async function searchSimilarChunks(
     return [];
   }
 
-  const scored = docChunks.map(c => ({
-    id: c.id,
-    documentId: c.documentId,
-    pageNumber: c.pageNumber,
-    chunkIndex: c.chunkIndex,
-    text: c.text,
-    similarity: cosineSimilarity(queryEmbedding, c.embedding),
+  return rankVectors(docChunks, queryEmbedding, topK).map(({ item, similarity }) => ({
+    id: item.id,
+    documentId: item.documentId,
+    pageNumber: item.pageNumber,
+    chunkIndex: item.chunkIndex,
+    text: item.text,
+    similarity,
   }));
-
-  scored.sort((a, b) => b.similarity - a.similarity);
-  return scored.slice(0, topK);
 }
 
 /**
@@ -326,18 +311,28 @@ export async function deleteStoredDocument(documentId: string): Promise<void> {
   if (isPostgresReady && pool) {
     try {
       await pool.query('DELETE FROM documents WHERE id = $1', [documentId]);
-    } catch (err) {
-      console.warn('Failed to delete from Postgres:', err);
+    } catch {
+      console.error('Document database deletion failed.');
+      throw new Error('Could not delete the document from the configured database.');
     }
+    return;
   }
 
+  const existingDocument = memoryDocuments.get(documentId);
+  const removedChunks: MemoryChunk[] = [];
   memoryDocuments.delete(documentId);
   for (let i = memoryChunks.length - 1; i >= 0; i--) {
     if (memoryChunks[i].documentId === documentId) {
-      memoryChunks.splice(i, 1);
+      removedChunks.unshift(...memoryChunks.splice(i, 1));
     }
   }
-  saveToDisk();
+  try {
+    saveToDisk();
+  } catch {
+    if (existingDocument) memoryDocuments.set(documentId, existingDocument);
+    memoryChunks.push(...removedChunks);
+    throw new Error('Could not persist the document deletion to the local store.');
+  }
 }
 
 /**
@@ -361,8 +356,9 @@ export async function listStoredDocuments(): Promise<StoredDocument[]> {
           : JSON.parse(r.suggested_questions || '[]'),
         createdAt: new Date(r.created_at),
       }));
-    } catch (err) {
-      console.warn('Postgres list query failed, using memory store:', err);
+    } catch {
+      console.error('Document database listing failed.');
+      throw new Error('Could not list documents from the configured database.');
     }
   }
 

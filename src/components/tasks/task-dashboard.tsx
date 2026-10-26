@@ -13,8 +13,12 @@ import {
   ListTodo,
   Loader2,
   Plus,
+  Pencil,
   RefreshCw,
+  Save,
   Sparkles,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { ProductNavigation } from '@/components/layout/product-navigation';
 import { CreateTaskInput, Task, TaskPriority, TaskStatus } from '@/lib/tasks/types';
@@ -77,9 +81,39 @@ function formatDueDate(value: string | null): string {
   }).format(date);
 }
 
-function TaskCard({ task }: { task: Task }) {
+function TaskCard({ task, onUpdate, onDelete }: {
+  task: Task;
+  onUpdate: (id: string, patch: Record<string, unknown>) => Promise<boolean>;
+  onDelete: (id: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || '');
+  const [priority, setPriority] = useState<TaskPriority>(task.priority);
+  const [status, setStatus] = useState<TaskStatus>(task.status);
+  const [dueDate, setDueDate] = useState(task.dueDate?.slice(0, 10) || '');
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTitle(task.title);
+    setDescription(task.description || '');
+    setPriority(task.priority);
+    setStatus(task.status);
+    setDueDate(task.dueDate?.slice(0, 10) || '');
+  }, [task]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      setActionError(null);
+      if (await onUpdate(task.id, { title, description, priority, status, due_date: dueDate || null })) setEditing(false);
+      else setActionError('Could not update this task.');
+    } finally { setBusy(false); }
+  };
+
   return (
-    <article className="group rounded-2xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-500/30 hover:shadow-md sm:p-6">
+    <article data-testid="task-card" className="group rounded-2xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-500/30 hover:shadow-md sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold capitalize', priorityStyles[task.priority])}>
           {task.priority} priority
@@ -96,16 +130,41 @@ function TaskCard({ task }: { task: Task }) {
         </span>
       </div>
 
-      <h3 className="mt-4 break-words text-lg font-semibold leading-snug text-foreground">
-        {task.title}
-      </h3>
-      <p className="mt-2 min-h-6 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
-        {task.description || 'No description provided.'}
-      </p>
+      {editing ? (
+        <div className="mt-4 space-y-2">
+          <input aria-label="Edit task title" maxLength={200} value={title} onChange={event => setTitle(event.target.value)} className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" />
+          <textarea aria-label="Edit task description" maxLength={10000} rows={3} value={description} onChange={event => setDescription(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          <div className="grid grid-cols-3 gap-2">
+            <select aria-label="Edit task priority" value={priority} onChange={event => setPriority(event.target.value as TaskPriority)} className="h-9 rounded-lg border border-input bg-background px-2 text-xs"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
+            <select aria-label="Edit task status" value={status} onChange={event => setStatus(event.target.value as TaskStatus)} className="h-9 rounded-lg border border-input bg-background px-2 text-xs"><option value="pending">Pending</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select>
+            <input aria-label="Edit task due date" type="date" value={dueDate} onChange={event => setDueDate(event.target.value)} className="h-9 min-w-0 rounded-lg border border-input bg-background px-2 text-xs" />
+          </div>
+        </div>
+      ) : (
+        <>
+          <h3 className="mt-4 break-words text-lg font-semibold leading-snug text-foreground">{task.title}</h3>
+          <p className="mt-2 min-h-6 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{task.description || 'No description provided.'}</p>
+        </>
+      )}
 
       <div className="mt-5 flex items-center gap-2 border-t border-border/70 pt-4 text-xs text-muted-foreground">
         <CalendarDays className="h-4 w-4 text-indigo-500" />
         <span>{formatDueDate(task.dueDate)}</span>
+      </div>
+      {actionError && <p role="alert" className="mt-2 text-xs text-destructive">{actionError}</p>}
+      <div className="mt-4 flex flex-wrap gap-2">
+        {editing ? (
+          <>
+            <button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save</button>
+            <button type="button" disabled={busy} onClick={() => setEditing(false)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs"><X className="h-3.5 w-3.5" /> Cancel</button>
+          </>
+        ) : (
+          <>
+            <button type="button" disabled={busy} onClick={() => setEditing(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs"><Pencil className="h-3.5 w-3.5" /> Edit</button>
+            <button type="button" disabled={busy} onClick={async () => { setActionError(null); if (!(await onUpdate(task.id, { status: task.status === 'completed' ? 'pending' : 'completed' }))) setActionError('Could not update this task.'); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs">{task.status === 'completed' ? 'Reopen' : 'Complete'}</button>
+            <button type="button" disabled={busy} onClick={async () => { if (window.confirm(`Delete “${task.title}”?`)) { setActionError(null); if (!(await onDelete(task.id))) setActionError('Could not delete this task.'); } }} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-destructive/25 px-3 text-xs text-destructive"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+          </>
+        )}
       </div>
     </article>
   );
@@ -218,6 +277,42 @@ export function TaskDashboard({
       );
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const updateTask = async (id: string, patch: Record<string, unknown>): Promise<boolean> => {
+    setFormError(null);
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      });
+      if (!response.ok) {
+        setFormError(await getResponseError(response, 'Could not update the task.'));
+        return false;
+      }
+      const body = await response.json();
+      if (!body?.task || body.task.id !== id) return false;
+      setTasks(current => current.map(task => task.id === id ? body.task : task));
+      return true;
+    } catch {
+      setFormError('Could not reach the task service. Please try again.');
+      return false;
+    }
+  };
+
+  const deleteTask = async (id: string): Promise<boolean> => {
+    setFormError(null);
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!response.ok) {
+        setFormError(await getResponseError(response, 'Could not delete the task.'));
+        return false;
+      }
+      setTasks(current => current.filter(task => task.id !== id));
+      return true;
+    } catch {
+      setFormError('Could not reach the task service. Please try again.');
+      return false;
     }
   };
 
@@ -453,7 +548,7 @@ export function TaskDashboard({
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {visibleTasks.map(task => <TaskCard key={task.id} task={task} />)}
+              {visibleTasks.map(task => <TaskCard key={task.id} task={task} onUpdate={updateTask} onDelete={deleteTask} />)}
             </div>
           )}
         </section>

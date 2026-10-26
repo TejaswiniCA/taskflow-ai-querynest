@@ -12,7 +12,7 @@ interface SidebarProps {
   documents: DocumentItem[];
   activeDocId: string | null;
   onSelectDocument: (doc: DocumentItem) => void;
-  onDocumentAdded: (newDoc: DocumentItem, chunks?: any[]) => void;
+  onDocumentAdded: (newDoc: DocumentItem) => void;
   onDeleteDocument?: (docId: string) => void;
   onNewChat: () => void;
   isOpen: boolean;

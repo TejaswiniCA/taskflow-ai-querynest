@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { X, BookOpen, Copy, Check, ExternalLink, Sparkles } from 'lucide-react';
+import { X, BookOpen, Copy, Check, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Citation } from '@/lib/types';
 

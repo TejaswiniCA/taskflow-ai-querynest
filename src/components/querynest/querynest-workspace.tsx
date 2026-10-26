@@ -16,13 +16,13 @@ export function QueryNestWorkspace({
   authMode?: 'local-development' | 'better-auth' | null;
 }) {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [documentChunks, setDocumentChunks] = useState<Record<string, any[]>>({});
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [documentMessages, setDocumentMessages] = useState<Record<string, ChatMessage[]>>({});
   const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoadingDocs, setIsLoadingDocs] = useState(true);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
 
   // Load existing uploaded documents from API
   useEffect(() => {
@@ -35,9 +35,12 @@ export function QueryNestWorkspace({
             setDocuments(data.documents);
             setActiveDocId(data.documents[0].id);
           }
+          setDocumentsError(null);
+        } else {
+          setDocumentsError('Could not load your documents. Please refresh and try again.');
         }
-      } catch (err) {
-        console.error('Error loading documents:', err);
+      } catch {
+        setDocumentsError('Could not reach the document service. Please check your connection and try again.');
       } finally {
         setIsLoadingDocs(false);
       }
@@ -62,15 +65,9 @@ export function QueryNestWorkspace({
     setActiveDocId(null);
   };
 
-  const handleDocumentAdded = (newDoc: DocumentItem, chunks?: any[]) => {
+  const handleDocumentAdded = (newDoc: DocumentItem) => {
     setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)]);
     setActiveDocId(newDoc.id);
-    if (chunks && chunks.length > 0) {
-      setDocumentChunks(prev => ({
-        ...prev,
-        [newDoc.id]: chunks,
-      }));
-    }
     setDocumentMessages(prev => ({
       ...prev,
       [newDoc.id]: [],
@@ -79,15 +76,16 @@ export function QueryNestWorkspace({
 
   const handleDeleteDocument = async (docId: string) => {
     try {
-      await fetch(`/api/documents?id=${encodeURIComponent(docId)}`, {
+      const response = await fetch(`/api/documents?id=${encodeURIComponent(docId)}`, {
         method: 'DELETE',
       });
+      if (!response.ok) throw new Error('Could not delete this document. Please try again.');
       setDocuments(prev => prev.filter(d => d.id !== docId));
       if (activeDocId === docId) {
         setActiveDocId(null);
       }
-    } catch (err) {
-      console.error('Failed to delete document:', err);
+    } catch {
+      setDocumentsError('Could not delete this document. Please try again.');
     }
   };
 
@@ -146,11 +144,8 @@ export function QueryNestWorkspace({
           documentId: activeDocId,
           question: userText,
           chatHistory,
-          fallbackChunks: documentChunks[activeDocId] || [],
         }),
       });
-
-      clearTimeout(abortTimeout);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -206,19 +201,19 @@ export function QueryNestWorkspace({
                 };
               });
             } else if (data.type === 'error') {
-              throw new Error(data.error);
+              throw new Error(data.error || 'The answer stream was interrupted.');
             }
           } catch (jsonErr) {
-            // Ignore single malformed line
+            if (jsonErr instanceof Error && jsonErr.message !== 'Unexpected end of JSON input') throw jsonErr;
           }
         }
       }
-    } catch (err: any) {
-      console.error('Chat generation error:', err);
-      const isTimeout = err?.name === 'AbortError' || err?.message?.includes('aborted');
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error('Request failed');
+      const isTimeout = error.name === 'AbortError' || error.message.includes('aborted');
       const errorText = isTimeout
         ? 'The request took too long to respond. The document context is retained—please try asking your question again.'
-        : (err?.message || 'I encountered an error retrieving this answer. Please verify your connection and try again.');
+        : (error.message || 'I encountered an error retrieving this answer. Please verify your connection and try again.');
 
       setDocumentMessages(prev => {
         const thread = prev[activeDocId] || [];
@@ -264,6 +259,7 @@ export function QueryNestWorkspace({
         />
 
         <main className="flex-1 overflow-hidden flex flex-col">
+          {documentsError && <p role="alert" className="mx-4 mt-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">{documentsError}</p>}
           {activeDocId && activeDocument ? (
             <ChatPanel
               document={activeDocument}
@@ -272,6 +268,8 @@ export function QueryNestWorkspace({
               onSendMessage={handleSendMessage}
               onCitationClick={citation => setActiveCitation(citation)}
             />
+          ) : isLoadingDocs ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground" role="status">Loading documents…</div>
           ) : (
             <div className="flex-1 overflow-y-auto">
               <LandingHero onDocumentAdded={handleDocumentAdded} />

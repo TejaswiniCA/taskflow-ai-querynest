@@ -6,10 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { formatFileSize, cn } from '@/lib/utils';
 import { DocumentItem, UploadProgress } from '@/lib/types';
 
-interface UploadZoneProps {
-  onDocumentAdded: (newDoc: DocumentItem, chunks?: any[]) => void;
-  className?: string;
-}
+interface UploadZoneProps { onDocumentAdded: (newDoc: DocumentItem) => void; className?: string }
 
 export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -90,18 +87,18 @@ export function UploadZone({ onDocumentAdded, className }: UploadZoneProps) {
         fileName: file.name,
       });
 
-      onDocumentAdded(data.document, data.chunks);
+      onDocumentAdded(data.document);
 
       setTimeout(() => {
         setUploadProgress({ status: 'idle', progress: 0 });
       }, 2000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearInterval(progressTimer);
       setUploadProgress({
         status: 'error',
         progress: 0,
         fileName: file.name,
-        errorMessage: err?.message || 'Failed to upload and index document.',
+        errorMessage: err instanceof Error ? err.message : 'Failed to upload and index document.',
       });
     }
   };

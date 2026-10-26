@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page, TestInfo } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chunkPages } from '../src/lib/rag/chunker';
@@ -89,21 +89,13 @@ test.describe('QueryNest isolated document UI flow', () => {
         }
 
         documents.unshift(fixtureDocument);
-        const chunks = sampleChunks.map(chunk => ({
-          id: chunk.id,
-          pageNumber: chunk.pageNumber,
-          chunkIndex: chunk.chunkIndex,
-          text: chunk.text,
-        }));
-
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
             success: true,
             document: fixtureDocument,
-            chunksCount: chunks.length,
-            chunks,
+            chunksCount: sampleChunks.length,
           }),
         });
         return;

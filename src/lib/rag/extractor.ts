@@ -5,6 +5,11 @@ export interface ExtractedPage {
   text: string;
 }
 
+interface PdfPageData {
+  pageIndex: number;
+  getTextContent(): Promise<{ items: Array<{ str?: string }> }>;
+}
+
 /**
  * Extracts text page-by-page from a PDF or TXT buffer.
  */
@@ -48,13 +53,13 @@ export async function extractTextPerPage(
   // PDF extraction with exact page tracking
   const pages: ExtractedPage[] = [];
 
-  const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
+  const pdfParser = typeof pdf === 'function' ? pdf : (pdf as unknown as { default: typeof pdf }).default;
 
   const options = {
-    pagerender: async function (pageData: any) {
+    pagerender: async function (pageData: PdfPageData) {
       const textContent = await pageData.getTextContent();
       const pageText = textContent.items
-        .map((item: any) => item.str)
+        .map(item => item.str ?? '')
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -75,7 +80,7 @@ export async function extractTextPerPage(
     // Fallback if pagerender didn't collect pages
     if (pages.length === 0 && data.text) {
       const text = data.text.trim();
-      const splitByFormFeed = text.split('\f').filter((t: string) => t.trim().length > 0);
+      const splitByFormFeed = text.split('\f').filter(t => t.trim().length > 0);
       if (splitByFormFeed.length > 1) {
         return splitByFormFeed.map((t: string, idx: number) => ({
           pageNumber: idx + 1,
@@ -88,7 +93,7 @@ export async function extractTextPerPage(
     // Sort by pageNumber ascending
     pages.sort((a, b) => a.pageNumber - b.pageNumber);
     return pages;
-  } catch (err: any) {
-    throw new Error(`Failed to parse PDF document: ${err?.message || err}`);
+  } catch {
+    throw new Error('Failed to parse PDF document.');
   }
 }
