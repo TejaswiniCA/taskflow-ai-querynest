@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
     // 6. Save document & vector embeddings into Postgres / vector store
     const storedDoc = {
       id: docId,
+      ownerUserId: auth.user.id,
       title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
       filename: validated.fileName,
       sizeBytes: validated.sizeBytes,
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
       createdAt: new Date(),
     };
 
-    await saveDocumentWithChunks(storedDoc, chunks, embeddings);
+    await saveDocumentWithChunks(storedDoc, chunks, embeddings, auth.user.id);
 
     const clientDocument: DocumentItem = {
       id: storedDoc.id,

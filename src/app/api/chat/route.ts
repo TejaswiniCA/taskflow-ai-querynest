@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 import { embedText } from '@/lib/rag/embedder';
-import { searchSimilarChunks } from '@/lib/rag/db';
+import { ownsStoredDocument, searchSimilarChunks } from '@/lib/rag/db';
+import { createChatOwnershipGuard } from '@/lib/rag/chat-ownership';
 import { checkRateLimit } from '@/lib/rag/rate-limiter';
 import { requireAuthenticatedRequest } from '@/lib/api-auth';
 import { Citation } from '@/lib/types';
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 const NOT_FOUND_ANSWER = "I couldn't find that in your documents.";
 const CANDIDATE_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+const AI_REQUEST_TIMEOUT_MS = 10_000;
+const authorizeChatDocument = createChatOwnershipGuard(ownsStoredDocument);
 
 function getApiKey(): string {
   return process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
@@ -75,8 +78,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const ownershipResponse = await authorizeChatDocument(input.documentId, auth.user.id);
+    if (ownershipResponse) return ownershipResponse;
     const queryEmbedding = await embedText(input.question.trim(), TaskType.RETRIEVAL_QUERY);
-    const chunks = await searchSimilarChunks(input.documentId, queryEmbedding, 4);
+    const chunks = await searchSimilarChunks(input.documentId, auth.user.id, queryEmbedding, 4);
     if (chunks.length === 0) return responseStream([], 'retrieval', NOT_FOUND_ANSWER);
     const citations: Citation[] = chunks.map((chunk, index) => ({
       id: `cit-${index + 1}-${chunk.pageNumber}`,
@@ -99,7 +104,10 @@ export async function POST(req: NextRequest) {
     let selectedModel = '';
     for (const modelName of CANDIDATE_MODELS) {
       try {
-        const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 800 } });
+        const model = genAI.getGenerativeModel(
+          { model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 800 } },
+          { timeout: AI_REQUEST_TIMEOUT_MS }
+        );
         streamResult = await model.generateContentStream(prompt);
         selectedModel = modelName;
         break;

@@ -4,9 +4,11 @@ import path from 'path';
 import { randomUUID } from 'node:crypto';
 import { DocumentChunk } from './chunker';
 import { rankVectors } from './vector-search';
+import { documentBelongsToUser, retrieveOwnedChunks } from './owned-document';
 
 export interface StoredDocument {
   id: string;
+  ownerUserId: string | null;
   title: string;
   filename: string;
   sizeBytes: number;
@@ -136,6 +138,7 @@ export async function initDb(): Promise<boolean> {
       await client.query(`
         CREATE TABLE IF NOT EXISTS documents (
           id TEXT PRIMARY KEY,
+          owner_user_id TEXT,
           title TEXT NOT NULL,
           filename TEXT NOT NULL,
           size_bytes INTEGER NOT NULL,
@@ -177,7 +180,8 @@ export async function initDb(): Promise<boolean> {
 export async function saveDocumentWithChunks(
   doc: StoredDocument,
   chunks: DocumentChunk[],
-  embeddings: number[][]
+  embeddings: number[][],
+  ownerUserId: string
 ): Promise<void> {
   const isPostgresReady = await initDb();
 
@@ -187,13 +191,11 @@ export async function saveDocumentWithChunks(
       await client.query('BEGIN');
 
       await client.query(
-        `INSERT INTO documents (id, title, filename, size_bytes, page_count, suggested_questions, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (id) DO UPDATE SET
-           title = EXCLUDED.title,
-           suggested_questions = EXCLUDED.suggested_questions;`,
+        `INSERT INTO documents (id, owner_user_id, title, filename, size_bytes, page_count, suggested_questions, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`,
         [
           doc.id,
+          ownerUserId,
           doc.title,
           doc.filename,
           doc.sizeBytes,
@@ -228,7 +230,7 @@ export async function saveDocumentWithChunks(
   }
 
   // Local-only fallback when no PostgreSQL URL is configured.
-  memoryDocuments.set(doc.id, doc);
+  memoryDocuments.set(doc.id, { ...doc, ownerUserId });
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i];
     memoryChunks.push({
@@ -252,6 +254,7 @@ export async function saveDocumentWithChunks(
  */
 export async function searchSimilarChunks(
   documentId: string,
+  ownerUserId: string,
   queryEmbedding: number[],
   topK = 4
 ): Promise<ScoredChunk[]> {
@@ -260,23 +263,21 @@ export async function searchSimilarChunks(
   if (isPostgresReady && pool) {
     try {
       const vectorStr = `[${queryEmbedding.join(',')}]`;
-      const result = await pool.query(
-        `SELECT id, document_id, page_number, chunk_index, chunk_text,
-                (1 - (embedding <=> $1::vector)) as similarity
-         FROM document_chunks
-         WHERE document_id = $2
-         ORDER BY embedding <=> $1::vector ASC
-         LIMIT $3;`,
-        [vectorStr, documentId, topK]
+      const rows = await retrieveOwnedChunks(
+        (sql, values) => pool!.query(sql, values),
+        documentId,
+        ownerUserId,
+        vectorStr,
+        topK
       );
 
-      return result.rows.map(r => ({
+      return rows.map(r => ({
         id: r.id,
         documentId: r.document_id,
         pageNumber: r.page_number,
         chunkIndex: r.chunk_index,
         text: r.chunk_text,
-        similarity: parseFloat(r.similarity),
+        similarity: parseFloat(String(r.similarity)),
       }));
     } catch {
       console.error('Document database retrieval failed.');
@@ -286,6 +287,8 @@ export async function searchSimilarChunks(
 
   // In-memory vector cosine similarity calculation
   loadFromDisk();
+  const storedDocument = memoryDocuments.get(documentId);
+  if (!storedDocument || storedDocument.ownerUserId !== ownerUserId) return [];
   const docChunks = memoryChunks.filter(c => c.documentId === documentId);
 
   // If there are few chunks, return all of them
@@ -306,18 +309,41 @@ export async function searchSimilarChunks(
 /**
  * Deletes a stored document and its associated chunks.
  */
-export async function deleteStoredDocument(documentId: string): Promise<void> {
+export async function ownsStoredDocument(documentId: string, ownerUserId: string): Promise<boolean> {
   const isPostgresReady = await initDb();
   if (isPostgresReady && pool) {
     try {
-      await pool.query('DELETE FROM documents WHERE id = $1', [documentId]);
+      return await documentBelongsToUser(
+        (sql, values) => pool!.query(sql, values),
+        documentId,
+        ownerUserId
+      );
+    } catch {
+      console.error('Document ownership check failed.');
+      throw new Error('Could not verify document ownership.');
+    }
+  }
+  loadFromDisk();
+  return memoryDocuments.get(documentId)?.ownerUserId === ownerUserId;
+}
+
+export async function deleteStoredDocument(documentId: string, ownerUserId: string): Promise<boolean> {
+  const isPostgresReady = await initDb();
+  if (isPostgresReady && pool) {
+    try {
+      const result = await pool.query(
+        'DELETE FROM documents WHERE id = $1 AND owner_user_id = $2 RETURNING id',
+        [documentId, ownerUserId]
+      );
+      return result.rowCount === 1;
     } catch {
       console.error('Document database deletion failed.');
       throw new Error('Could not delete the document from the configured database.');
     }
-    return;
   }
 
+  const documentToDelete = memoryDocuments.get(documentId);
+  if (!documentToDelete || documentToDelete.ownerUserId !== ownerUserId) return false;
   const existingDocument = memoryDocuments.get(documentId);
   const removedChunks: MemoryChunk[] = [];
   memoryDocuments.delete(documentId);
@@ -333,20 +359,24 @@ export async function deleteStoredDocument(documentId: string): Promise<void> {
     memoryChunks.push(...removedChunks);
     throw new Error('Could not persist the document deletion to the local store.');
   }
+  return true;
 }
 
 /**
  * Lists all stored documents.
  */
-export async function listStoredDocuments(): Promise<StoredDocument[]> {
+export async function listStoredDocuments(ownerUserId: string): Promise<StoredDocument[]> {
   const isPostgresReady = await initDb();
   if (isPostgresReady && pool) {
     try {
       const res = await pool.query(
-        'SELECT id, title, filename, size_bytes, page_count, suggested_questions, created_at FROM documents ORDER BY created_at DESC;'
+        `SELECT id, owner_user_id, title, filename, size_bytes, page_count, suggested_questions, created_at
+         FROM documents WHERE owner_user_id = $1 ORDER BY created_at DESC;`,
+        [ownerUserId]
       );
       return res.rows.map(r => ({
         id: r.id,
+        ownerUserId: r.owner_user_id,
         title: r.title,
         filename: r.filename,
         sizeBytes: r.size_bytes,
@@ -363,5 +393,5 @@ export async function listStoredDocuments(): Promise<StoredDocument[]> {
   }
 
   loadFromDisk();
-  return Array.from(memoryDocuments.values());
+  return Array.from(memoryDocuments.values()).filter(doc => doc.ownerUserId === ownerUserId);
 }

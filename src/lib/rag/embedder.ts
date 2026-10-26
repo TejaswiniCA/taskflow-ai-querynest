@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 
+const AI_REQUEST_TIMEOUT_MS = 15_000;
+
 function getApiKey(): string {
   const key =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
@@ -21,7 +23,10 @@ export async function embedText(
 ): Promise<number[]> {
   const apiKey = getApiKey();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
+  const model = genAI.getGenerativeModel(
+    { model: 'gemini-embedding-001' },
+    { timeout: AI_REQUEST_TIMEOUT_MS }
+  );
 
   try {
     const result = await model.embedContent({
