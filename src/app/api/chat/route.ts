@@ -4,7 +4,7 @@ import { embedText } from '@/lib/rag/embedder';
 import { ownsStoredDocument, searchSimilarChunks } from '@/lib/rag/db';
 import { createChatOwnershipGuard } from '@/lib/rag/chat-ownership';
 import { checkRateLimit } from '@/lib/rag/rate-limiter';
-import { requireAuthenticatedRequest } from '@/lib/api-auth';
+import { PUBLIC_DEMO_OWNER_ID } from '@/lib/demo-owner';
 import { Citation } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -50,9 +50,6 @@ function responseStream(citations: Citation[], model: string, answer?: string, s
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuthenticatedRequest(req.headers);
-  if (auth.response) return auth.response;
-
   const ip = (req.headers.get('x-forwarded-for') || '127.0.0.1').split(',')[0].trim().slice(0, 80);
   const limit = checkRateLimit(ip, 40, 60000);
   if (!limit.allowed) {
@@ -78,10 +75,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const ownershipResponse = await authorizeChatDocument(input.documentId, auth.user.id);
+    const ownershipResponse = await authorizeChatDocument(input.documentId, PUBLIC_DEMO_OWNER_ID);
     if (ownershipResponse) return ownershipResponse;
     const queryEmbedding = await embedText(input.question.trim(), TaskType.RETRIEVAL_QUERY);
-    const chunks = await searchSimilarChunks(input.documentId, auth.user.id, queryEmbedding, 4);
+    const chunks = await searchSimilarChunks(input.documentId, PUBLIC_DEMO_OWNER_ID, queryEmbedding, 4);
     if (chunks.length === 0) return responseStream([], 'retrieval', NOT_FOUND_ANSWER);
     const citations: Citation[] = chunks.map((chunk, index) => ({
       id: `cit-${index + 1}-${chunk.pageNumber}`,

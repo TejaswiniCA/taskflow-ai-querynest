@@ -4,7 +4,7 @@
 
 TaskFlow AI + QueryNest is a local interview demo combining PostgreSQL-backed task management with document question answering. QueryNest ingests PDFs and text files, creates Gemini vector embeddings, and returns grounded answers with page-level citations.
 
-> **Local-only security status:** TaskFlow can use an opt-in local development identity that maps to `local-development-user`; it is a development shortcut, not authentication. Better Auth requires its own configuration and reviewed database migration. QueryNest document upload, listing, and chat APIs remain unauthenticated and are not scoped to users. Keep the app bound to localhost. Do not deploy it publicly or treat it as production-ready until authentication and authorization protect all APIs and stored data, and the deployment configuration has been reviewed. The existing development task is preserved.
+> **Shared demo warning:** There is no sign-in or authentication. All visitors share access to demo tasks and documents and may create, change, or delete them. Do not upload private, personal, or sensitive information. This app is not a private workspace or a production-ready service.
 
 ---
 
@@ -61,7 +61,7 @@ flowchart TD
 - PostgreSQL for TaskFlow task persistence
 - Google Gemini API key ([Google AI Studio](https://aistudio.google.com/)) to use document upload and AI chat
 
-This is a local interview/demo application, not a production deployment. The TaskFlow local identity is a development shortcut. QueryNest has a single shared document store without per-document owner columns, even though its UI and API routes now require the configured session. Keep the app on loopback and use only data you are comfortable storing in a local demo. Do not expose it to a network or deploy it publicly.
+This is an unauthenticated shared demo. Every visitor operates on the same demo namespace (`local-development-user`) for tasks and documents. The owner value is only a database partition key; it does not identify or authenticate a visitor. Anyone who can reach the app can view, create, edit, and delete the tasks and documents in that namespace. Do not enter private or sensitive data. Public access also exposes the Gemini-backed endpoints to abuse and unexpected API costs. Keep local development bound to loopback. Before any public demo, use a separate disposable database with no personal data and add deployment-wide quotas and abuse controls; this project does not provide strong public-demo protections.
 
 ### 1. Installation
 ```bash
@@ -85,40 +85,15 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
 # For local PostgreSQL use a loopback URL and omit sslmode, or use sslmode=disable.
 DATABASE_URL=postgresql://user:password@127.0.0.1:5432/taskflow_ai
 
-# Better Auth (generate a unique secret with: openssl rand -base64 32)
-BETTER_AUTH_SECRET=replace_with_a_random_secret_of_at_least_32_characters
-BETTER_AUTH_URL=http://localhost:3000
-
-# Local-only identity; active only with NODE_ENV=development and loopback host
-TASKFLOW_LOCAL_AUTH=true
-
-# Google OAuth web client credentials; these are separate from Gemini API keys
-TASKFLOW_GOOGLE_CLIENT_ID=your_google_oauth_client_id
-TASKFLOW_GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
-TASKFLOW_ALLOWED_EMAIL=you@example.com
 ```
 
-For local interview development, keep `TASKFLOW_LOCAL_AUTH=true` in `.env.local` and use `npm run dev`. The development server binds to `127.0.0.1`; the local identity always uses `local-development-user` and can see the existing task with that owner. This is a single-user shortcut, not authentication. Do not expose the server to your network or deploy with this setting. QueryNest documents are not individually tied to an account in the current schema.
-
-### Optional Google OAuth setup
-
-Create an OAuth client in Google Cloud Console under **APIs & Services → Credentials → Create Credentials → OAuth client ID → Web application**. Add the app's local origin under **Authorized JavaScript origins** and add this exact redirect URI under **Authorized redirect URIs**:
-
-```text
-http://localhost:3000/api/auth/callback/google
-```
-
-Use the same port in `BETTER_AUTH_URL`; if Next.js selects another port, update both values and the Google Console URI to match. Add the allowed Google account as a test user in the OAuth consent screen while the consent app is in testing mode. Store the OAuth client ID and secret only in `.env.local`.
-
-For Google OAuth, set `TASKFLOW_LOCAL_AUTH=false` and configure the Better Auth environment variables. The local identity is ignored outside `NODE_ENV=development`.
-
-The Better Auth SQL in `db/migrations/002_better_auth.sql` is unapplied and requires review before use. It creates auth tables and adds an unvalidated foreign key; it does not reassign the development-owned task. Do not treat this file as an applied schema change.
+Only `DATABASE_URL` is needed for PostgreSQL-backed task/document storage. `GOOGLE_GENERATIVE_AI_API_KEY` is needed for document embeddings and AI answers. No authentication variables or Google OAuth setup are used.
 
 ### Database notes
 
-The task table is defined in `db/migrations/001_create_tasks.sql`. The Better Auth schema and foreign key are in `db/migrations/002_better_auth.sql`; that file is unapplied and requires review before use. Do not apply either migration automatically. QueryNest's current `initDb()` also runs additive `CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS` statements when its PostgreSQL path is first accessed; the application database role therefore needs those privileges. Review and move that DDL into a controlled, reviewed migration before relying on a hosted database. No migration has been run as part of this work.
+The task table is defined in `db/migrations/001_create_tasks.sql`. The older Better Auth migration `db/migrations/002_better_auth.sql` remains in the repository as historical schema work but is no longer required by this app; do not apply it for this demo. No migration is run automatically by this sign-in change. QueryNest's current `initDb()` also runs additive `CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS` statements when its PostgreSQL path is first accessed; the application database role therefore needs those privileges. Review and move that DDL into a controlled, reviewed migration before relying on a hosted database.
 
-For a new local database, first review `db/migrations/001_create_tasks.sql`, then apply only that additive task migration yourself with `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/001_create_tasks.sql`. Verify it with `psql "$DATABASE_URL" -c '\d public.tasks'`. Do not apply migration `002` until its auth tables, existing local task behavior, and foreign-key effects have been reviewed. In particular, that foreign key would reject future tasks owned by `local-development-user` unless an explicitly designed auth identity row is provided; the existing development task remains untouched.
+For a new local database, first review `db/migrations/001_create_tasks.sql`, then apply only that additive task migration yourself with `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/001_create_tasks.sql`. Verify it with `psql "$DATABASE_URL" -c '\d public.tasks'`. Do not apply the obsolete Better Auth migration `002` for this unauthenticated demo.
 
 ### 3. Check a local build
 ```bash
@@ -139,7 +114,7 @@ npx tsc --noEmit
 npm run lint
 npm run build
 ```
-The unit suite covers task validation/API ownership, auth policy, chunking, file validation, sample PDF extraction, unique IDs for repeated document uploads, and in-memory vector ranking. The tests use fake task handlers and the local sample file; they do not connect to PostgreSQL or call Gemini.
+The unit suite covers task validation and shared demo namespace scoping, document namespace scoping, chunking, file validation, sample PDF extraction, unique IDs for repeated document uploads, and in-memory vector ranking. Tests use fake handlers and local fixtures; they do not connect to PostgreSQL or call Gemini.
 
 ### Optional 10-question RAG benchmark
 ```bash
@@ -158,9 +133,9 @@ The suite validates unsupported-file feedback, sample PDF upload UI, streamed an
 
 ---
 
-## Deployment status: not ready for public use
+## Public demo limitations
 
-This repository currently describes a local interview demo. The local development identity is not authentication. QueryNest's endpoints require the configured session, but the document/vector schema is still globally shared and has no per-user ownership. The Better Auth migration remains unapplied. Do not deploy this app publicly or use it for private documents until the schema enforces ownership, the migration is reviewed and applied deliberately, and production auth, storage, rate limiting, and deployment settings are independently reviewed.
+There is no identity boundary: public visitors share the demo owner namespace. They can change or remove shared tasks and documents, and can trigger Gemini API usage. Existing upload/chat rate limits are process-local and do not provide distributed or deployment-wide protection; task APIs do not have rate limits. Vercel deployments also need persistent PostgreSQL and a separate, disposable demo database. Do not deploy this as a private-data application. OAuth and sign-in are intentionally not part of this project version.
 
 ---
 

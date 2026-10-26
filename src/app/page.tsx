@@ -1,49 +1,39 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { AlertTriangle, ArrowRight, BookOpen, CheckSquare, Sparkles } from 'lucide-react';
 import { ProductNavigation } from '@/components/layout/product-navigation';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { PUBLIC_DEMO_OWNER_ID } from '@/lib/demo-owner';
 import { getTaskStatsForUser } from '@/lib/tasks/db';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'TaskFlow AI — Home',
-  description: 'Your personal task and document workspace.',
+  description: 'A shared task management and document Q&A demo.',
 };
 
 export default async function HomePage() {
-  let user;
-  try {
-    user = await getAuthenticatedUser(await headers());
-  } catch {
-    redirect('/sign-in?error=setup_required');
-  }
-  if (!user) redirect('/sign-in');
-
   let taskStats = null;
   try {
-    taskStats = await getTaskStatsForUser(user.id);
+    taskStats = await getTaskStatsForUser(PUBLIC_DEMO_OWNER_ID);
   } catch {
     // Keep Home usable when PostgreSQL is temporarily unavailable.
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <ProductNavigation active="home" userEmail={user.email} authMode={user.authMode} />
+      <ProductNavigation active="home" />
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
         <section className="relative overflow-hidden rounded-3xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-card to-card px-6 py-9 sm:px-10 sm:py-12">
           <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl" />
           <div className="relative max-w-2xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-background/70 px-3 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
               <Sparkles className="h-3.5 w-3.5" />
-              Your personal workspace
+              Shared demo workspace
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Welcome back{user.name ? `, ${user.name}` : ''}.
+              Welcome to TaskFlow AI.
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               Keep your next steps organized and find answers in your documents from one workspace.
@@ -54,7 +44,7 @@ export default async function HomePage() {
         <div role="note" className="mt-6 flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>
-            TaskFlow is account-protected. QueryNest document and chat APIs are not yet scoped to your account. Keep the app on localhost until document access is also protected.
+            Shared demo: visitors use the same tasks and documents and can change or delete them. Do not upload private or sensitive information.
           </p>
         </div>
 

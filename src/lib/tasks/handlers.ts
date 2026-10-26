@@ -1,9 +1,4 @@
 import { NextResponse } from 'next/server';
-import type { AuthenticatedUser } from '@/lib/auth';
-import {
-  AuthConfigurationError,
-  AuthServiceUnavailableError,
-} from '@/lib/auth';
 import { validateCreateTask, validateUpdateTask } from './validation';
 
 interface TaskQueryResult {
@@ -11,7 +6,7 @@ interface TaskQueryResult {
 }
 
 export interface TaskApiDependencies {
-  getUser(headers: Headers): Promise<AuthenticatedUser | null>;
+  ownerUserId: string;
   query(sql: string, values?: unknown[]): Promise<TaskQueryResult>;
 }
 
@@ -34,21 +29,6 @@ function isDatabaseUnavailable(error: unknown): boolean {
       candidate.code ?? ''
     ) ||
     candidate.message === 'Task database is not configured.'
-  );
-}
-
-function authErrorResponse(error: unknown) {
-  const isConfigurationError = error instanceof AuthConfigurationError;
-  const isUnavailableError = error instanceof AuthServiceUnavailableError;
-  return NextResponse.json(
-    {
-      error: isConfigurationError
-        ? 'Authentication is not configured.'
-        : isUnavailableError
-          ? 'Authentication service is unavailable.'
-          : 'Authentication request failed.',
-    },
-    { status: isConfigurationError || isUnavailableError ? 503 : 500 }
   );
 }
 
@@ -75,32 +55,15 @@ async function readJson(request: Request): Promise<
 }
 
 export function createTaskHandlers(dependencies: TaskApiDependencies) {
-  async function getUser(request: Request): Promise<
-    | { user: AuthenticatedUser; response?: never }
-    | { user?: never; response: NextResponse }
-  > {
-    try {
-      const user = await dependencies.getUser(request.headers);
-      if (!user) {
-        return { response: NextResponse.json({ error: 'Authentication required.' }, { status: 401 }) };
-      }
-      return { user };
-    } catch (error) {
-      return { response: authErrorResponse(error) };
-    }
-  }
-
   async function GET(request: Request) {
-    const auth = await getUser(request);
-    if (auth.response) return auth.response;
-
+    void request;
     try {
       const result = await dependencies.query(
         `SELECT ${taskSelect}
          FROM tasks
          WHERE user_id = $1
          ORDER BY created_at DESC, id DESC`,
-        [auth.user.id]
+        [dependencies.ownerUserId]
       );
       return NextResponse.json({ tasks: result.rows });
     } catch (error) {
@@ -110,8 +73,6 @@ export function createTaskHandlers(dependencies: TaskApiDependencies) {
   }
 
   async function POST(request: Request) {
-    const auth = await getUser(request);
-    if (auth.response) return auth.response;
     const json = await readJson(request);
     if (!json.ok) return json.response;
 
@@ -126,7 +87,7 @@ export function createTaskHandlers(dependencies: TaskApiDependencies) {
         `INSERT INTO tasks (user_id, title, description, priority, status, due_date)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING ${taskSelect}`,
-        [auth.user.id, title, description, priority, status, dueDate]
+        [dependencies.ownerUserId, title, description, priority, status, dueDate]
       );
       return NextResponse.json({ task: result.rows[0] }, { status: 201 });
     } catch (error) {
@@ -136,8 +97,6 @@ export function createTaskHandlers(dependencies: TaskApiDependencies) {
   }
 
   async function PATCH(request: Request) {
-    const auth = await getUser(request);
-    if (auth.response) return auth.response;
     const id = parseTaskId(new URL(request.url).pathname);
     if (!id) return NextResponse.json({ error: 'A valid task id is required.' }, { status: 400 });
 
@@ -158,7 +117,7 @@ export function createTaskHandlers(dependencies: TaskApiDependencies) {
     const fields = Object.entries(validation.value) as [keyof typeof columnByField, unknown][];
     const assignments = fields.map(([field], index) => `${columnByField[field]} = $${index + 1}`);
     const values = fields.map(([, value]) => value);
-    values.push(id, auth.user.id);
+    values.push(id, dependencies.ownerUserId);
 
     try {
       const result = await dependencies.query(
@@ -179,15 +138,13 @@ export function createTaskHandlers(dependencies: TaskApiDependencies) {
   }
 
   async function DELETE(request: Request) {
-    const auth = await getUser(request);
-    if (auth.response) return auth.response;
     const id = parseTaskId(new URL(request.url).pathname);
     if (!id) return NextResponse.json({ error: 'A valid task id is required.' }, { status: 400 });
 
     try {
       const result = await dependencies.query(
         'DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id',
-        [id, auth.user.id]
+        [id, dependencies.ownerUserId]
       );
       if (!result.rows[0]) {
         return NextResponse.json({ error: 'Task not found.' }, { status: 404 });

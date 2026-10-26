@@ -89,8 +89,15 @@ test.describe('TaskFlow isolated task management flow', () => {
 
   test('navigates between Home, My Tasks, and Documents & AI Assistant', async ({ page }) => {
     await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Home' }).click();
-    await expect(page.getByRole('heading', { name: /Welcome back/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Welcome to TaskFlow AI/ })).toBeVisible();
     await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Documents & AI Assistant' }).click();
     await expect(page.getByText('Ask your documents. Get answers with proof.')).toBeVisible();
+  });
+
+  test('dummy sign-in continues directly to the task dashboard', async ({ page }) => {
+    await page.goto('/sign-in');
+    await page.getByRole('button', { name: 'Continue to Dashboard' }).click();
+    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page.getByRole('heading', { name: 'Your tasks, in flow.' })).toBeVisible();
   });
 });

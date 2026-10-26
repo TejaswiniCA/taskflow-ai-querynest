@@ -8,13 +8,7 @@ import { CitationDrawer } from '@/components/chat/citation-drawer';
 import { LandingHero } from '@/components/landing/landing-hero';
 import { DocumentItem, ChatMessage, Citation } from '@/lib/types';
 
-export function QueryNestWorkspace({
-  userEmail,
-  authMode,
-}: {
-  userEmail?: string | null;
-  authMode?: 'local-development' | 'better-auth' | null;
-}) {
+export function QueryNestWorkspace() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [documentMessages, setDocumentMessages] = useState<Record<string, ChatMessage[]>>({});
@@ -254,11 +248,12 @@ export function QueryNestWorkspace({
         <ChatHeader
           activeDocument={activeDocument}
           onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
-          userEmail={userEmail}
-          authMode={authMode}
         />
 
         <main className="flex-1 overflow-hidden flex flex-col">
+          <p role="note" className="mx-3 mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:text-amber-200 sm:mx-4">
+            Shared demo: visitors can view, upload, and delete the same documents. Do not upload private or sensitive files.
+          </p>
           {documentsError && <p role="alert" className="mx-4 mt-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">{documentsError}</p>}
           {activeDocId && activeDocument ? (
             <ChatPanel

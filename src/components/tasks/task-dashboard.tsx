@@ -170,13 +170,7 @@ function TaskCard({ task, onUpdate, onDelete }: {
   );
 }
 
-export function TaskDashboard({
-  userEmail,
-  authMode = 'better-auth',
-}: {
-  userEmail: string;
-  authMode?: 'local-development' | 'better-auth';
-}) {
+export function TaskDashboard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [filter, setFilter] = useState<TaskFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
@@ -318,14 +312,14 @@ export function TaskDashboard({
 
   return (
     <div className="min-h-screen bg-background">
-      <ProductNavigation active="tasks" userEmail={userEmail} authMode={authMode} />
+      <ProductNavigation active="tasks" />
 
       <main className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-10">
         <div className="mb-7 flex flex-col justify-between gap-5 sm:mb-9 sm:flex-row sm:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-300">
               <Sparkles className="h-3.5 w-3.5" />
-              Your workspace
+              Shared workspace
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               Your tasks, in flow.
@@ -352,7 +346,7 @@ export function TaskDashboard({
         <div role="note" className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>
-            TaskFlow is account-protected. QueryNest document and chat APIs are not yet scoped to your account, so keep the app on localhost until document access is protected too.
+            Shared demo: visitors use the same tasks and documents and can change or delete them. Do not upload private or sensitive information.
           </p>
         </div>
 

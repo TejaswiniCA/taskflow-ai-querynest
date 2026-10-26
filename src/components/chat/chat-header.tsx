@@ -1,20 +1,17 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { Menu, FileText, Sparkles, CheckCircle2 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { ProductNavLinks, SignOutButton } from '@/components/layout/product-navigation';
+import { ProductNavLinks } from '@/components/layout/product-navigation';
 import { DocumentItem } from '@/lib/types';
 
 interface ChatHeaderProps {
   activeDocument: DocumentItem | null;
   onToggleSidebar: () => void;
-  userEmail?: string | null;
-  authMode?: 'local-development' | 'better-auth' | null;
 }
 
-export function ChatHeader({ activeDocument, onToggleSidebar, userEmail, authMode }: ChatHeaderProps) {
+export function ChatHeader({ activeDocument, onToggleSidebar }: ChatHeaderProps) {
   return (
     <header className="h-16 border-b border-border/80 bg-background/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3 min-w-0">
@@ -59,17 +56,7 @@ export function ChatHeader({ activeDocument, onToggleSidebar, userEmail, authMod
       {/* Right controls */}
       <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2.5">
         <ProductNavLinks active="documents" compact />
-        {authMode === 'local-development' ? (
-          <span className="hidden rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-2 text-xs font-medium text-amber-800 sm:inline dark:text-amber-200">
-            Local only
-          </span>
-        ) : userEmail ? (
-          <SignOutButton compact />
-        ) : (
-          <Link href="/sign-in" className="inline-flex h-9 items-center rounded-lg px-2.5 text-sm font-medium text-indigo-600 hover:bg-accent/40 dark:text-indigo-400">
-            Sign in
-          </Link>
-        )}
+        <span className="hidden rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-2 text-xs font-medium text-amber-800 sm:inline dark:text-amber-200">Shared demo</span>
         <ThemeToggle />
       </div>
     </header>

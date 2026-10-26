@@ -8,14 +8,12 @@ import { generateSuggestedQuestions } from '@/lib/rag/suggester';
 import { checkRateLimit } from '@/lib/rag/rate-limiter';
 import { DocumentItem } from '@/lib/types';
 import { randomUUID } from 'node:crypto';
-import { requireAuthenticatedRequest } from '@/lib/api-auth';
+import { PUBLIC_DEMO_OWNER_ID } from '@/lib/demo-owner';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds max execution
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuthenticatedRequest(req.headers);
-  if (auth.response) return auth.response;
   const contentLength = Number(req.headers.get('content-length'));
   if (Number.isFinite(contentLength) && contentLength > 5 * 1024 * 1024 + 64 * 1024) {
     return NextResponse.json({ error: 'Upload exceeds the maximum size of 5 MB.' }, { status: 413 });
@@ -84,7 +82,7 @@ export async function POST(req: NextRequest) {
     // 6. Save document & vector embeddings into Postgres / vector store
     const storedDoc = {
       id: docId,
-      ownerUserId: auth.user.id,
+      ownerUserId: PUBLIC_DEMO_OWNER_ID,
       title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
       filename: validated.fileName,
       sizeBytes: validated.sizeBytes,
@@ -93,7 +91,7 @@ export async function POST(req: NextRequest) {
       createdAt: new Date(),
     };
 
-    await saveDocumentWithChunks(storedDoc, chunks, embeddings, auth.user.id);
+    await saveDocumentWithChunks(storedDoc, chunks, embeddings, PUBLIC_DEMO_OWNER_ID);
 
     const clientDocument: DocumentItem = {
       id: storedDoc.id,

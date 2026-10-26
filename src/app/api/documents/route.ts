@@ -1,11 +1,11 @@
-import { getAuthenticatedUser } from '@/lib/auth';
+import { PUBLIC_DEMO_OWNER_ID } from '@/lib/demo-owner';
 import { createDocumentHandlers } from '@/lib/rag/document-handlers';
 import { deleteStoredDocument, listStoredDocuments } from '@/lib/rag/db';
 
 export const dynamic = 'force-dynamic';
 
 const handlers = createDocumentHandlers({
-  getUser: getAuthenticatedUser,
+  ownerUserId: PUBLIC_DEMO_OWNER_ID,
   listDocuments: listStoredDocuments,
   deleteDocument: deleteStoredDocument,
 });
